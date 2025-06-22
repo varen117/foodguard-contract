@@ -2,5 +2,43 @@
 src = "src"
 out = "out"
 libs = ["lib"]
+solc_version = "0.8.20"
+optimizer = true
+optimizer_runs = 100
+via_ir = true
+remappings = [
+    "@openzeppelin/=lib/openzeppelin-contracts/",
+    "@openzeppelin/contracts-upgradeable=lib/openzeppelin-contracts-upgradeable/contracts",
+    "@openzeppelin/contracts-test-helpers=lib/openzeppelin-contracts-test-helpers/src",
+    "@openzeppelin/contracts-upgradeable-test-helpers=lib/openzeppelin-contracts-upgradeable-test-helpers/src",
+]
+
+# RPC endpoints
+[rpc_endpoints]
+mainnet = "${MAINNET_RPC_URL}"
+sepolia = "${SEPOLIA_RPC_URL}"
+polygon = "${POLYGON_RPC_URL}"
+localhost = "http://localhost:8545"
+
+# Etherscan API keys for contract verification
+[etherscan]
+mainnet = { key = "${ETHERSCAN_API_KEY}" }
+sepolia = { key = "${ETHERSCAN_API_KEY}" }
+polygon = { key = "${POLYGONSCAN_API_KEY}" }
+
+# Gas settings
+[profile.default.gas_settings]
+gas_limit = 9223372036854775807
+gas_price = 2000000000
+
+# Test settings
+[profile.test]
+verbosity = 2
+fuzz = { runs = 256 }
+
+# Production profile
+[profile.production]
+optimizer_runs = 10000
+bytecode_hash = "none"
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
