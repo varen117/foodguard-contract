@@ -3,84 +3,30 @@ src = "src"
 out = "out"
 libs = ["lib"]
 remappings = [
-    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
-    "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/"
+    '@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/',
+    '@chainlink/contracts/=lib/chainlink-brownie-contracts/contracts/',
+    '@solmate=lib/solmate/src/'
 ]
 
-# 文件系统权限配置
 fs_permissions = [
     { access = "read", path = "./broadcast" },
     { access = "read", path = "./reports" },
-    { access = "read", path = "./out" },
-    { access = "read", path = "./cache" }
+    { access = "read", path = "./test" }
 ]
 
-# 启用 FFI（外部函数接口）
 ffi = true
-
-# Solc 编译器版本
-solc_version = "0.8.20"
-
-# 优化配置
+solc = "0.8.20"
 optimizer = true
 optimizer_runs = 200
 via_ir = true
 
-# 测试配置
-[profile.default.fuzz]
-runs = 256
-
-[profile.default.invariant]
-runs = 256
-depth = 15
-fail_on_revert = true
-
-# CI配置
-[profile.ci]
-fuzz = { runs = 10000 }
-invariant = { runs = 1000 }
-
-# 本地测试配置
-[profile.local]
-optimizer = false
-verbosity = 3
-
-# Etherscan API 配置
 [etherscan]
 mainnet = { key = "${ETHERSCAN_API_KEY}" }
 sepolia = { key = "${ETHERSCAN_API_KEY}" }
-polygon = { key = "${POLYGONSCAN_API_KEY}" }
+goerli = { key = "${ETHERSCAN_API_KEY}" }
 
-# RPC 端点配置
 [rpc_endpoints]
 sepolia = "${SEPOLIA_RPC_URL}"
+goerli = "${GOERLI_RPC_URL}"
 mainnet = "${MAINNET_RPC_URL}"
-polygon = "${POLYGON_RPC_URL}"
 localhost = "http://127.0.0.1:8545"
-
-# 格式化配置
-[fmt]
-line_length = 120
-tab_width = 4
-bracket_spacing = true
-int_types = "long"
-
-# Gas 报告配置
-gas_reports = ["*"]
-
-# 部署验证配置
-[profile.default.verify]
-etherscan_api_key = "${ETHERSCAN_API_KEY}"
-
-# 缓存配置 (使用默认设置)
-
-# 警告配置
-[profile.default.warnings]
-enabled = true
-
-# 依赖配置
-[dependencies]
-forge-std = "1.8.2"
-openzeppelin-contracts = "5.0.1"
-
-# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
