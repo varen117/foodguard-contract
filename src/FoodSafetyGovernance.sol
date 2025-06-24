@@ -8,6 +8,7 @@ import "./modules/FundManager.sol";
 import "./modules/VotingManager.sol";
 import "./modules/DisputeManager.sol";
 import "./modules/RewardPunishmentManager.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title FoodSafetyGovernance
@@ -15,14 +16,11 @@ import "./modules/RewardPunishmentManager.sol";
  * @notice 食品安全治理主合约，整合投诉、验证、质疑、奖惩等完整流程
  * @dev 严格按照Mermaid流程图实现的去中心化食品安全治理系统
  */
-contract FoodSafetyGovernance {
+contract FoodSafetyGovernance is Pausable{
     // ==================== 状态变量 ====================
 
     /// @notice 管理员地址
     address public admin;
-
-    /// @notice 合约是否暂停
-    bool public isPaused;
 
     /// @notice 案件计数器
     uint256 public caseCounter;
@@ -88,16 +86,6 @@ contract FoodSafetyGovernance {
     }
 
     /**
-     * @notice 合约未暂停时可调用
-     */
-    modifier whenNotPaused() {
-        if (isPaused) {
-            revert Errors.SystemPaused();
-        }
-        _;
-    }
-
-    /**
      * @notice 检查用户是否已注册
      */
     modifier onlyRegisteredUser() {
@@ -139,7 +127,6 @@ contract FoodSafetyGovernance {
     constructor() {
         admin = msg.sender;
         caseCounter = 0;
-        isPaused = false;
     }
 
     // ==================== 初始化函数 ====================
@@ -316,7 +303,8 @@ contract FoodSafetyGovernance {
         string calldata complaintDescription,
         string calldata location,
         uint256 incidentTime,
-        string[] calldata evidenceHashes
+        string[] calldata evidenceHashes,
+        uint8 riskLevel
     )
     external
     payable
@@ -352,6 +340,10 @@ contract FoodSafetyGovernance {
             revert Errors.InsufficientEvidence(0, 1);
         }
 
+        if (riskLevel <= uint256(DataStructures.RiskLevel.HIGH)) {
+            revert Errors.InvalidRiskLevel(riskLevel);
+        }
+
         // 验证保证金
         DataStructures.SystemConfig memory config = fundManager
             .getSystemConfig();
@@ -361,15 +353,14 @@ contract FoodSafetyGovernance {
                 config.minComplaintDeposit
             );
         }
+        if (msg.value > config.maxComplaintDeposit) {
+            revert Errors.ComplaintDepositExceedsLimit(
+                msg.value,
+                config.minComplaintDeposit);
+        }
 
         // 创建新案件
         caseId = ++caseCounter;
-
-        // 评估风险等级
-        DataStructures.RiskLevel riskLevel = _assessRiskLevel(
-            enterprise,
-            complaintDescription
-        );
 
         // 创建案件信息
         CaseInfo storage newCase = cases[caseId];
@@ -382,18 +373,16 @@ contract FoodSafetyGovernance {
         newCase.incidentTime = incidentTime;
         newCase.complaintTime = block.timestamp;
         newCase.status = DataStructures.CaseStatus.PENDING;
-        newCase.riskLevel = riskLevel;
+        newCase.riskLevel = DataStructures.RiskLevel(riskLevel);
         newCase.complainantDeposit = msg.value;
         newCase.isCompleted = false;
-
-        // 注意：投诉保证金已经在 msg.value 中提供，将直接进入锁定流程
 
         emit Events.ComplaintCreated(
             caseId,
             msg.sender,
             enterprise,
             complaintTitle,
-            riskLevel,
+            DataStructures.RiskLevel(riskLevel),
             block.timestamp
         );
 
@@ -664,58 +653,6 @@ contract FoodSafetyGovernance {
     // ==================== 辅助函数 ====================
 
     /**
-     * @notice 评估风险等级
-     * @param enterprise 企业地址
-     * @param description 投诉描述
-     * @return 风险等级
-     */
-    function _assessRiskLevel(
-        address enterprise,
-        string calldata description
-    ) internal view returns (DataStructures.RiskLevel) {
-        // 基于企业历史风险等级
-        DataStructures.RiskLevel baseRisk = enterpriseRiskLevel[enterprise];
-
-        // 基于投诉内容的关键词判断（简化实现）
-        bytes memory desc = bytes(description);
-
-        // 检查高风险关键词
-        if (_containsHighRiskKeywords(desc)) {
-            return DataStructures.RiskLevel.HIGH;
-        }
-
-        // 检查中风险关键词
-        if (_containsMediumRiskKeywords(desc)) {
-            return
-                baseRisk == DataStructures.RiskLevel.HIGH
-                    ? DataStructures.RiskLevel.HIGH
-                    : DataStructures.RiskLevel.MEDIUM;
-        }
-
-        return baseRisk;
-    }
-
-    /**
-     * @notice 检查是否包含高风险关键词
-     */
-    function _containsHighRiskKeywords(
-        bytes memory description
-    ) internal pure returns (bool) {
-        // 简化实现：检查是否包含"poisoning"、"death"等关键词
-        // 实际实现中可以使用更复杂的NLP算法
-        return description.length > 100; // 简化为描述长度判断
-    }
-
-    /**
-     * @notice 检查是否包含中风险关键词
-     */
-    function _containsMediumRiskKeywords(
-        bytes memory description
-    ) internal pure returns (bool) {
-        return description.length > 50;
-    }
-
-    /**
      * @notice 获取受影响的用户列表
      */
     function _getAffectedUsers(
@@ -768,13 +705,12 @@ contract FoodSafetyGovernance {
      * @notice 暂停/恢复合约
      */
     function setPaused(bool _paused) external onlyAdmin {
-        isPaused = _paused;
+        if (_paused) {
+            _pause();
+        }else {
+            _unpause();
+        }
 
-        emit Events.SystemPauseStatusChanged(
-            _paused,
-            msg.sender,
-            block.timestamp
-        );
     }
 
     /**
