@@ -135,10 +135,10 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
     function withdrawFunds(
         uint256 amount
     )
-        external
-        whenNotPaused
-        nonReentrant
-        hasAvailableDeposit(msg.sender, amount)
+    external
+    whenNotPaused
+    nonReentrant
+    hasAvailableDeposit(msg.sender, amount)
     {
         if (amount == 0) {
             revert Errors.InvalidAmount(amount, 1);
@@ -146,7 +146,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
 
         userDeposits[msg.sender] -= amount;
 
-        (bool success, ) = msg.sender.call{value: amount}("");
+        (bool success,) = msg.sender.call{value: amount}("");
         if (!success) {
             revert Errors.TransferFailed(msg.sender, amount);
         }
@@ -170,11 +170,11 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         address user,
         uint256 amount
     )
-        external
-        onlyRole(OPERATOR_ROLE)
-        whenNotPaused
-        notZeroAddress(user)
-        hasAvailableDeposit(user, amount)
+    external
+    onlyRole(OPERATOR_ROLE)
+    whenNotPaused
+    notZeroAddress(user)
+    hasAvailableDeposit(user, amount)
     {
         frozenDeposits[user] += amount;
         caseFrozenDeposits[caseId][user] = amount;
@@ -289,7 +289,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
 
         pendingRewards[msg.sender] = 0;
 
-        (bool success, ) = msg.sender.call{value: rewardAmount}("");
+        (bool success,) = msg.sender.call{value: rewardAmount}("");
         if (!success) {
             revert Errors.TransferFailed(msg.sender, rewardAmount);
         }
@@ -357,7 +357,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
      */
     function _addToFundPool(uint256 amount, string memory source) internal {
         uint256 rewardPoolShare = (amount * systemConfig.rewardPoolPercentage) /
-            100;
+                    100;
         uint256 operationalShare = (amount *
             systemConfig.operationalFeePercentage) / 100;
         uint256 reserveShare = amount - rewardPoolShare - operationalShare;
@@ -401,7 +401,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         fundPool.emergencyFund -= amount;
         fundPool.totalBalance -= amount;
 
-        (bool success, ) = recipient.call{value: amount}("");
+        (bool success,) = recipient.call{value: amount}("");
         if (!success) {
             revert Errors.TransferFailed(recipient, amount);
         }
@@ -451,9 +451,9 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
      * @return 资金池详细信息
      */
     function getFundPoolStatus()
-        external
-        view
-        returns (DataStructures.FundPool memory)
+    external
+    view
+    returns (DataStructures.FundPool memory)
     {
         return fundPool;
     }
@@ -463,9 +463,9 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
      * @return 系统配置详细信息
      */
     function getSystemConfig()
-        external
-        view
-        returns (DataStructures.SystemConfig memory)
+    external
+    view
+    returns (DataStructures.SystemConfig memory)
     {
         return systemConfig;
     }
@@ -510,11 +510,11 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         address user,
         uint256 amount
     )
-        external
-        payable
-        onlyRole(OPERATOR_ROLE)
-        whenNotPaused
-        notZeroAddress(user)
+    external
+    payable
+    onlyRole(OPERATOR_ROLE)
+    whenNotPaused
+    notZeroAddress(user)
     {
         if (msg.value != amount) {
             revert Errors.InvalidAmount(msg.value, amount);

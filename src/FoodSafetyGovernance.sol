@@ -9,6 +9,7 @@ import "./modules/VotingManager.sol";
 import "./modules/DisputeManager.sol";
 import "./modules/RewardPunishmentManager.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title FoodSafetyGovernance
@@ -16,11 +17,8 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
  * @notice 食品安全治理主合约，整合投诉、验证、质疑、奖惩等完整流程
  * @dev 严格按照Mermaid流程图实现的去中心化食品安全治理系统
  */
-contract FoodSafetyGovernance is Pausable{
+contract FoodSafetyGovernance is Pausable, Ownable {
     // ==================== 状态变量 ====================
-
-    /// @notice 管理员地址
-    address public admin;
 
     /// @notice 案件计数器
     uint256 public caseCounter;
@@ -74,17 +72,6 @@ contract FoodSafetyGovernance is Pausable{
     }
 
     // ==================== 修饰符 ====================
-
-    /**
-     * @notice 只有管理员可以调用
-     */
-    modifier onlyAdmin() {
-        if (msg.sender != admin) {
-            revert Errors.InsufficientPermission(msg.sender, "ADMIN");
-        }
-        _;
-    }
-
     /**
      * @notice 检查用户是否已注册
      */
@@ -124,8 +111,7 @@ contract FoodSafetyGovernance is Pausable{
 
     // ==================== 构造函数 ====================
 
-    constructor() {
-        admin = msg.sender;
+    constructor(address initialOwner) Ownable(initialOwner) {
         caseCounter = 0;
     }
 
@@ -143,7 +129,7 @@ contract FoodSafetyGovernance is Pausable{
         address _votingManager,
         address _disputeManager,
         address _rewardManager
-    ) external onlyAdmin {
+    ) external onlyOwner {
         if (
             _fundManager == address(0) ||
             _votingManager == address(0) ||
@@ -704,10 +690,10 @@ contract FoodSafetyGovernance is Pausable{
     /**
      * @notice 暂停/恢复合约
      */
-    function setPaused(bool _paused) external onlyAdmin {
+    function setPaused(bool _paused) external onlyOwner {
         if (_paused) {
             _pause();
-        }else {
+        } else {
             _unpause();
         }
 
@@ -719,7 +705,7 @@ contract FoodSafetyGovernance is Pausable{
     function updateEnterpriseRiskLevel(
         address enterprise,
         DataStructures.RiskLevel newLevel
-    ) external onlyAdmin {
+    ) external onlyOwner {
         if (!isEnterpriseRegistered[enterprise]) {
             revert Errors.EnterpriseNotRegistered(enterprise);
         }
@@ -741,7 +727,7 @@ contract FoodSafetyGovernance is Pausable{
     function emergencyCancelCase(
         uint256 caseId,
         string calldata reason
-    ) external onlyAdmin caseExists(caseId) {
+    ) external onlyOwner caseExists(caseId) {
         CaseInfo storage caseInfo = cases[caseId];
 
         if (caseInfo.isCompleted) {

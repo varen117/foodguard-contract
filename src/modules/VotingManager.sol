@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "../libraries/DataStructures.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title VotingManager
@@ -11,7 +12,7 @@ import "../libraries/Events.sol";
  * @notice 投票管理模块，负责处理验证者选择、投票收集和结果统计
  * @dev 管理整个投票流程，包括验证者随机选择、投票期限控制、结果计算等
  */
-contract VotingManager {
+contract VotingManager is Ownable {
     // ==================== 状态变量 ====================
 
     /// @notice 管理员地址
@@ -62,16 +63,6 @@ contract VotingManager {
     // ==================== 修饰符 ====================
 
     /**
-     * @notice 只有管理员可以调用
-     */
-    modifier onlyAdmin() {
-        if (msg.sender != admin) {
-            revert Errors.InsufficientPermission(msg.sender, "ADMIN");
-        }
-        _;
-    }
-
-    /**
      * @notice 只有治理合约可以调用
      */
     modifier onlyGovernance() {
@@ -107,8 +98,7 @@ contract VotingManager {
 
     // ==================== 构造函数 ====================
 
-    constructor(address _admin) {
-        admin = _admin;
+    constructor(address _admin) Ownable(_admin){
         randomSeed = uint256(
             keccak256(
                 abi.encodePacked(block.timestamp, block.prevrandao, msg.sender)
@@ -128,7 +118,7 @@ contract VotingManager {
         address validatorAddress,
         uint256 stake,
         uint256 initialReputation
-    ) external onlyAdmin payable {
+    ) external onlyOwner payable {
         if (validatorAddress == address(0)) {
             revert Errors.ZeroAddress();
         }
@@ -178,8 +168,8 @@ contract VotingManager {
         }
 
         DataStructures.ValidatorInfo storage validator = validators[
-            validatorAddress
-        ];
+                    validatorAddress
+            ];
         validator.isActive = isActive;
         validator.reputationScore = newReputation;
         validator.lastActiveTime = block.timestamp;
@@ -397,10 +387,10 @@ contract VotingManager {
     function endVotingSession(
         uint256 caseId
     )
-        external
-        onlyGovernance
-        caseExists(caseId)
-        returns (bool complaintUpheld)
+    external
+    onlyGovernance
+    caseExists(caseId)
+    returns (bool complaintUpheld)
     {
         VotingSession storage session = votingSessions[caseId];
 
@@ -429,8 +419,8 @@ contract VotingManager {
                     vote.choice ==
                     DataStructures.VoteChoice.SUPPORT_COMPLAINT) ||
                     (!complaintUpheld &&
-                        vote.choice ==
-                        DataStructures.VoteChoice.REJECT_COMPLAINT);
+                    vote.choice ==
+                    DataStructures.VoteChoice.REJECT_COMPLAINT);
 
                 if (votedWithMajority) {
                     validators[validator].successfulValidations++;
@@ -558,20 +548,20 @@ contract VotingManager {
     function getVotingSessionInfo(
         uint256 caseId
     )
-        external
-        view
-        returns (
-            uint256, // caseId
-            address[] memory, // selectedValidators
-            uint256, // supportVotes
-            uint256, // rejectVotes
-            uint256, // totalVotes
-            uint256, // startTime
-            uint256, // endTime
-            bool, // isActive
-            bool, // isCompleted
-            bool // complaintUpheld
-        )
+    external
+    view
+    returns (
+        uint256, // caseId
+        address[] memory, // selectedValidators
+        uint256, // supportVotes
+        uint256, // rejectVotes
+        uint256, // totalVotes
+        uint256, // startTime
+        uint256, // endTime
+        bool, // isActive
+        bool, // isCompleted
+        bool // complaintUpheld
+    )
     {
         VotingSession storage session = votingSessions[caseId];
 
@@ -637,7 +627,7 @@ contract VotingManager {
      */
     function setGovernanceContract(
         address _governanceContract
-    ) external onlyAdmin {
+    ) external onlyOwner {
         if (_governanceContract == address(0)) {
             revert Errors.ZeroAddress();
         }
@@ -649,7 +639,7 @@ contract VotingManager {
      * @notice 移除验证者
      * @param validatorAddress 验证者地址
      */
-    function removeValidator(address validatorAddress) external onlyAdmin {
+    function removeValidator(address validatorAddress) external onlyOwner {
         if (!isValidatorInPool[validatorAddress]) {
             revert Errors.NotAuthorizedValidator(validatorAddress);
         }

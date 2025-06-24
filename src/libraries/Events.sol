@@ -11,12 +11,12 @@ import "./DataStructures.sol";
  */
 library Events {
     // ==================== 系统管理事件 ====================
-    
+
     /**
      * @notice 系统暂停/恢复事件
      */
     event SystemPauseStatusChanged(bool isPaused, address operator, uint256 timestamp);
-    
+
     /**
      * @notice 系统配置更新事件
      */
@@ -27,14 +27,14 @@ library Events {
         address operator,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 管理员权限变更事件
      */
     event AdminRoleChanged(address user, bool isAdmin, address operator, uint256 timestamp);
-    
+
     // ==================== 用户注册事件 ====================
-    
+
     /**
      * @notice 用户注册事件
      */
@@ -44,7 +44,7 @@ library Events {
         uint256 initialDeposit,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 验证者注册事件
      */
@@ -54,7 +54,7 @@ library Events {
         uint256 reputationScore,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 验证者状态更新事件
      */
@@ -64,9 +64,9 @@ library Events {
         uint256 newReputationScore,
         uint256 timestamp
     );
-    
+
     // ==================== 投诉相关事件 ====================
-    
+
     /**
      * @notice 投诉创建事件
      */
@@ -78,7 +78,7 @@ library Events {
         DataStructures.RiskLevel riskLevel,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 投诉证据提交事件
      */
@@ -89,7 +89,7 @@ library Events {
         string evidenceType,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 企业回应事件
      */
@@ -100,9 +100,9 @@ library Events {
         uint256 evidenceCount,
         uint256 timestamp
     );
-    
+
     // ==================== 保证金相关事件 ====================
-    
+
     /**
      * @notice 保证金存入事件
      */
@@ -112,7 +112,7 @@ library Events {
         uint256 totalDeposit,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 保证金冻结事件
      */
@@ -123,7 +123,7 @@ library Events {
         string reason,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 保证金解冻事件
      */
@@ -133,7 +133,7 @@ library Events {
         uint256 amount,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 保证金扣除事件
      */
@@ -144,9 +144,9 @@ library Events {
         string reason,
         uint256 timestamp
     );
-    
+
     // ==================== 验证投票事件 ====================
-    
+
     /**
      * @notice 验证者选择事件
      */
@@ -156,7 +156,7 @@ library Events {
         uint256 randomSeed,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 投票期开始事件
      */
@@ -166,7 +166,7 @@ library Events {
         uint256 validatorCount,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 投票提交事件
      */
@@ -178,7 +178,7 @@ library Events {
         uint256 evidenceCount,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 投票期结束事件
      */
@@ -188,9 +188,9 @@ library Events {
         uint256 rejectVotes,
         uint256 timestamp
     );
-    
+
     // ==================== 质疑相关事件 ====================
-    
+
     /**
      * @notice 质疑期开始事件
      */
@@ -199,7 +199,7 @@ library Events {
         uint256 challengeDeadline,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 质疑提交事件
      */
@@ -212,7 +212,7 @@ library Events {
         uint256 challengeDeposit,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 质疑期结束事件
      */
@@ -222,7 +222,7 @@ library Events {
         bool resultChanged,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 质疑结果处理事件
      */
@@ -233,9 +233,9 @@ library Events {
         bool challengeSuccessful,
         uint256 timestamp
     );
-    
+
     // ==================== 奖惩相关事件 ====================
-    
+
     /**
      * @notice 奖惩计算开始事件
      */
@@ -244,7 +244,7 @@ library Events {
         bool complaintUpheld,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 用户诚信状态更新事件
      */
@@ -256,7 +256,7 @@ library Events {
         DataStructures.RewardPunishmentStatus rewardPunishmentStatus,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 奖励发放事件
      */
@@ -267,7 +267,7 @@ library Events {
         string reason,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 惩罚执行事件
      */
@@ -278,9 +278,9 @@ library Events {
         string reason,
         uint256 timestamp
     );
-    
+
     // ==================== 资金池事件 ====================
-    
+
     /**
      * @notice 资金池状态更新事件
      */
@@ -291,7 +291,7 @@ library Events {
         uint256 emergencyFund,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 资金转入事件
      */
@@ -301,7 +301,7 @@ library Events {
         string source,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 资金转出事件
      */
@@ -311,9 +311,9 @@ library Events {
         string purpose,
         uint256 timestamp
     );
-    
+
     // ==================== 案件状态事件 ====================
-    
+
     /**
      * @notice 案件状态更新事件
      */
@@ -324,7 +324,7 @@ library Events {
         address operator,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 案件完成事件
      */
@@ -336,7 +336,7 @@ library Events {
         string finalReport,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 案件取消事件
      */
@@ -346,9 +346,9 @@ library Events {
         address operator,
         uint256 timestamp
     );
-    
+
     // ==================== 消息发布事件 ====================
-    
+
     /**
      * @notice 公告发布事件
      */
@@ -359,7 +359,7 @@ library Events {
         address publisher,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 风险警告发布事件
      */
@@ -370,9 +370,9 @@ library Events {
         uint256 relatedCases,
         uint256 timestamp
     );
-    
+
     // ==================== 紧急事件 ====================
-    
+
     /**
      * @notice 紧急情况事件
      */
@@ -383,7 +383,7 @@ library Events {
         address operator,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 高风险案件处理事件
      */
@@ -393,9 +393,9 @@ library Events {
         address[] affectedUsers,
         uint256 timestamp
     );
-    
+
     // ==================== 随机数相关事件 ====================
-    
+
     /**
      * @notice 随机数请求事件
      */
@@ -405,7 +405,7 @@ library Events {
         uint256 validatorPoolSize,
         uint256 timestamp
     );
-    
+
     /**
      * @notice 随机数接收事件
      */
@@ -415,4 +415,4 @@ library Events {
         uint256 randomValue,
         uint256 timestamp
     );
-} 
+}

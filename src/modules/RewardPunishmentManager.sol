@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "../libraries/DataStructures.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title RewardPunishmentManager
@@ -11,11 +12,8 @@ import "../libraries/Events.sol";
  * @notice 奖惩管理模块，负责根据投票和质疑结果计算和分配奖励与惩罚
  * @dev 根据流程图逻辑处理复杂的奖惩计算，管理用户诚信状态
  */
-contract RewardPunishmentManager {
+contract RewardPunishmentManager is Ownable {
     // ==================== 状态变量 ====================
-
-    /// @notice 管理员地址
-    address public admin;
 
     /// @notice 治理合约地址
     address public governanceContract;
@@ -97,16 +95,6 @@ contract RewardPunishmentManager {
     // ==================== 修饰符 ====================
 
     /**
-     * @notice 只有管理员可以调用
-     */
-    modifier onlyAdmin() {
-        if (msg.sender != admin) {
-            revert Errors.InsufficientPermission(msg.sender, "ADMIN");
-        }
-        _;
-    }
-
-    /**
      * @notice 只有治理合约可以调用
      */
     modifier onlyGovernance() {
@@ -128,8 +116,7 @@ contract RewardPunishmentManager {
 
     // ==================== 构造函数 ====================
 
-    constructor(address _admin) {
-        admin = _admin;
+    constructor(address _admin) Ownable(_admin) {
     }
 
     // ==================== 核心奖惩处理函数 ====================
@@ -237,7 +224,7 @@ contract RewardPunishmentManager {
                 votedCorrectly = true;
             } else if (
                 !complaintUpheld &&
-                choice == DataStructures.VoteChoice.REJECT_COMPLAINT
+            choice == DataStructures.VoteChoice.REJECT_COMPLAINT
             ) {
                 votedCorrectly = true;
             }
@@ -410,8 +397,8 @@ contract RewardPunishmentManager {
 
             // 投诉者获得赔偿
             DataStructures.UserStatus storage complainantStatus = userStatuses[
-                complainant
-            ];
+                        complainant
+                ];
             complainantStatus.integrity = DataStructures.IntegrityStatus.HONEST;
             complainantStatus.rewardPunishment = DataStructures
                 .RewardPunishmentStatus
@@ -432,8 +419,8 @@ contract RewardPunishmentManager {
 
             // 企业接受惩罚
             DataStructures.UserStatus storage enterpriseStatus = userStatuses[
-                enterprise
-            ];
+                        enterprise
+                ];
             enterpriseStatus.integrity = DataStructures
                 .IntegrityStatus
                 .DISHONEST;
@@ -458,8 +445,8 @@ contract RewardPunishmentManager {
 
             // 投诉者接受惩罚（虚假投诉）
             DataStructures.UserStatus storage complainantStatus = userStatuses[
-                complainant
-            ];
+                        complainant
+                ];
             complainantStatus.integrity = DataStructures
                 .IntegrityStatus
                 .DISHONEST;
@@ -484,8 +471,8 @@ contract RewardPunishmentManager {
 
             // 企业声誉恢复
             DataStructures.UserStatus storage enterpriseStatus = userStatuses[
-                enterprise
-            ];
+                        enterprise
+                ];
             enterpriseStatus.integrity = DataStructures.IntegrityStatus.HONEST;
             enterpriseStatus.rewardPunishment = DataStructures
                 .RewardPunishmentStatus
@@ -607,9 +594,9 @@ contract RewardPunishmentManager {
      * @notice 计算声誉恢复补偿
      */
     function _calculateReputationCompensation()
-        internal
-        pure
-        returns (uint256)
+    internal
+    pure
+    returns (uint256)
     {
         return 0.05 ether;
     }
@@ -622,17 +609,17 @@ contract RewardPunishmentManager {
     function getCaseRewardRecord(
         uint256 caseId
     )
-        external
-        view
-        returns (
-            uint256, // caseId
-            bool, // complaintUpheld
-            uint8, // riskLevel
-            uint256, // totalRewardAmount
-            uint256, // totalPunishmentAmount
-            bool, // isProcessed
-            uint256 // processTime
-        )
+    external
+    view
+    returns (
+        uint256, // caseId
+        bool, // complaintUpheld
+        uint8, // riskLevel
+        uint256, // totalRewardAmount
+        uint256, // totalPunishmentAmount
+        bool, // isProcessed
+        uint256 // processTime
+    )
     {
         RewardPunishmentRecord storage record = caseRewards[caseId];
 
@@ -682,14 +669,14 @@ contract RewardPunishmentManager {
     function getUserStats(
         address user
     )
-        external
-        view
-        returns (
-            uint256 totalRewards,
-            uint256 totalPunishments,
-            uint256 participationCount,
-            uint256 reputationScore
-        )
+    external
+    view
+    returns (
+        uint256 totalRewards,
+        uint256 totalPunishments,
+        uint256 participationCount,
+        uint256 reputationScore
+    )
     {
         DataStructures.UserStatus storage status = userStatuses[user];
 
@@ -708,7 +695,7 @@ contract RewardPunishmentManager {
      */
     function setGovernanceContract(
         address _governanceContract
-    ) external onlyAdmin {
+    ) external onlyOwner {
         if (_governanceContract == address(0)) {
             revert Errors.ZeroAddress();
         }
@@ -718,7 +705,7 @@ contract RewardPunishmentManager {
     /**
      * @notice 设置资金管理合约地址
      */
-    function setFundManager(address _fundManager) external onlyAdmin {
+    function setFundManager(address _fundManager) external onlyOwner {
         if (_fundManager == address(0)) {
             revert Errors.ZeroAddress();
         }

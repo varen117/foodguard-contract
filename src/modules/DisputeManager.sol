@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "../libraries/DataStructures.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title DisputeManager
@@ -11,12 +12,8 @@ import "../libraries/Events.sol";
  * @notice 质疑管理模块，负责处理对验证者投票结果的质疑
  * @dev 管理质疑流程，包括质疑提交、保证金管理、结果计算等
  */
-contract DisputeManager {
+contract DisputeManager is Ownable {
     // ==================== 状态变量 ====================
-
-    /// @notice 管理员地址
-    address public admin;
-
     /// @notice 治理合约地址
     address public governanceContract;
 
@@ -76,16 +73,6 @@ contract DisputeManager {
     // ==================== 修饰符 ====================
 
     /**
-     * @notice 只有管理员可以调用
-     */
-    modifier onlyAdmin() {
-        if (msg.sender != admin) {
-            revert Errors.InsufficientPermission(msg.sender, "ADMIN");
-        }
-        _;
-    }
-
-    /**
      * @notice 只有治理合约可以调用
      */
     modifier onlyGovernance() {
@@ -124,8 +111,7 @@ contract DisputeManager {
 
     // ==================== 构造函数 ====================
 
-    constructor(address _admin) {
-        admin = _admin;
+    constructor(address _admin) Ownable(_admin) {
     }
 
     // ==================== 质疑会话管理函数 ====================
@@ -225,9 +211,9 @@ contract DisputeManager {
 
         // 创建证据数组
         DataStructures.Evidence[]
-            memory evidences = new DataStructures.Evidence[](
-                evidenceHashes.length
-            );
+        memory evidences = new DataStructures.Evidence[](
+            evidenceHashes.length
+        );
         for (uint256 i = 0; i < evidenceHashes.length; i++) {
             evidences[i] = DataStructures.Evidence({
                 description: evidenceDescriptions[i],
@@ -242,14 +228,14 @@ contract DisputeManager {
         // 创建质疑信息
         DataStructures.ChallengeInfo memory challengeInfo = DataStructures
             .ChallengeInfo({
-                challenger: msg.sender,
-                targetValidator: targetValidator,
-                choice: choice,
-                reason: reason,
-                evidences: evidences,
-                timestamp: block.timestamp,
-                challengeDeposit: challengeDeposit
-            });
+            challenger: msg.sender,
+            targetValidator: targetValidator,
+            choice: choice,
+            reason: reason,
+            evidences: evidences,
+            timestamp: block.timestamp,
+            challengeDeposit: challengeDeposit
+        });
 
         // 添加质疑到会话
         session.challenges.push(challengeInfo);
@@ -258,8 +244,8 @@ contract DisputeManager {
 
         // 更新验证者质疑统计
         ChallengeStats storage stats = session.validatorChallengeStats[
-            targetValidator
-        ];
+                    targetValidator
+            ];
         if (!stats.hasBeenChallenged) {
             stats.hasBeenChallenged = true;
         }
@@ -365,8 +351,8 @@ contract DisputeManager {
 
         for (uint256 i = 0; i < session.challenges.length; i++) {
             DataStructures.ChallengeInfo storage challenge = session.challenges[
-                i
-            ];
+                        i
+                ];
             if (
                 challenge.challenger == challenger &&
                 challenge.targetValidator == targetValidator
@@ -397,8 +383,8 @@ contract DisputeManager {
         // 统计所有质疑
         for (uint256 i = 0; i < session.challenges.length; i++) {
             DataStructures.ChallengeInfo storage challenge = session.challenges[
-                i
-            ];
+                        i
+                ];
 
             if (
                 challenge.choice ==
@@ -435,8 +421,8 @@ contract DisputeManager {
 
         for (uint256 i = 0; i < session.challenges.length; i++) {
             DataStructures.ChallengeInfo storage challenge = session.challenges[
-                i
-            ];
+                        i
+                ];
 
             bool challengeSuccessful = false;
 
@@ -475,17 +461,17 @@ contract DisputeManager {
     function getDisputeSessionInfo(
         uint256 caseId
     )
-        external
-        view
-        returns (
-            uint256, // caseId
-            bool, // isActive
-            bool, // isCompleted
-            uint256, // startTime
-            uint256, // endTime
-            uint256, // totalChallenges
-            bool // resultChanged
-        )
+    external
+    view
+    returns (
+        uint256, // caseId
+        bool, // isActive
+        bool, // isCompleted
+        uint256, // startTime
+        uint256, // endTime
+        uint256, // totalChallenges
+        bool // resultChanged
+    )
     {
         DisputeSession storage session = disputeSessions[caseId];
 
@@ -532,14 +518,14 @@ contract DisputeManager {
         uint256 caseId,
         address validator
     )
-        external
-        view
-        returns (
-            uint256, // supportCount
-            uint256, // opposeCount
-            bool, // hasBeenChallenged
-            address[] memory // challengers
-        )
+    external
+    view
+    returns (
+        uint256, // supportCount
+        uint256, // opposeCount
+        bool, // hasBeenChallenged
+        address[] memory // challengers
+    )
     {
         ChallengeStats storage stats = disputeSessions[caseId]
             .validatorChallengeStats[validator];
@@ -562,9 +548,9 @@ contract DisputeManager {
     function getChallengerStats(
         address challenger
     )
-        external
-        view
-        returns (uint256 successCount, uint256 totalCount, uint256 successRate)
+    external
+    view
+    returns (uint256 successCount, uint256 totalCount, uint256 successRate)
     {
         successCount = challengerSuccessCount[challenger];
         totalCount = challengerTotalCount[challenger];
@@ -605,7 +591,7 @@ contract DisputeManager {
      */
     function setGovernanceContract(
         address _governanceContract
-    ) external onlyAdmin notZeroAddress(_governanceContract) {
+    ) external onlyOwner notZeroAddress(_governanceContract) {
         governanceContract = _governanceContract;
     }
 
@@ -615,7 +601,7 @@ contract DisputeManager {
      */
     function setFundManager(
         address _fundManager
-    ) external onlyAdmin notZeroAddress(_fundManager) {
+    ) external onlyOwner notZeroAddress(_fundManager) {
         fundManager = _fundManager;
     }
 
@@ -625,7 +611,7 @@ contract DisputeManager {
      */
     function setVotingManager(
         address _votingManager
-    ) external onlyAdmin notZeroAddress(_votingManager) {
+    ) external onlyOwner notZeroAddress(_votingManager) {
         votingManager = _votingManager;
     }
 
@@ -633,7 +619,7 @@ contract DisputeManager {
      * @notice 紧急暂停质疑会话
      * @param caseId 案件ID
      */
-    function emergencyPauseDispute(uint256 caseId) external onlyAdmin {
+    function emergencyPauseDispute(uint256 caseId) external onlyOwner {
         DisputeSession storage session = disputeSessions[caseId];
 
         if (!session.isActive) {
