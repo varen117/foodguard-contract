@@ -59,7 +59,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         if (frozen > totalDeposit) {
             revert Errors.InsufficientBalance(user, amount, 0);
         }
-
+        // 如果用户可用保证金小于本次操作需要的金额 amount，则不允许继续操作。
         uint256 available = totalDeposit - frozen;
         if (available < amount) {
             revert Errors.InsufficientBalance(user, amount, available);
