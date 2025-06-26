@@ -54,9 +54,6 @@ library Errors {
     /// @notice 投诉保证金不足
     error InsufficientComplaintDeposit(uint256 provided, uint256 required);
 
-    /// @notice 投诉保证金超过限额
-    error ComplaintDepositExceedsLimit(uint256 provided, uint256 limit);
-
     /// @notice 投诉者不能对自己的企业投诉
     error CannotComplainAgainstSelf(address complainant, address enterprise);
 
@@ -73,9 +70,6 @@ library Errors {
 
     /// @notice 企业保证金不足
     error InsufficientEnterpriseDeposit(uint256 provided, uint256 required);
-
-    /// @notice 企业保证金超额
-    error EnterpriseDepositExceedsLimit(uint256 provided, uint256 limit);
 
     /// @notice 企业未注册
     error EnterpriseNotRegistered(address enterprise);
@@ -109,9 +103,6 @@ library Errors {
 
     /// @notice 验证者保证金不足
     error InsufficientValidatorDeposit(uint256 provided, uint256 required);
-
-    /// @notice 验证者保证金超额
-    error ValidatorDepositExceedsLimit(uint256 provided, uint256 limit);
 
     // ==================== 投票相关错误 ====================
 
@@ -182,6 +173,35 @@ library Errors {
 
     /// @notice 惩罚计算错误
     error PunishmentCalculationError(string reason);
+
+    // ==================== 动态保证金相关错误 ====================
+
+    /// @notice 保证金状态异常
+    error InvalidDepositStatus(address user, uint8 currentStatus, uint8 expectedStatus);
+
+    /// @notice 用户操作被限制
+    error UserOperationRestricted(address user, string reason);
+
+    /// @notice 保证金不足以满足动态要求
+    error InsufficientDynamicDeposit(address user, uint256 required, uint256 available);
+
+    /// @notice 用户处于清算状态
+    error UserInLiquidation(address user);
+
+    /// @notice 互助池相关错误
+    error MutualPoolError(string reason);
+
+    /// @notice 互助池余额不足
+    error InsufficientPoolBalance(uint256 required, uint256 available);
+
+    /// @notice 用户未加入互助池
+    error NotPoolMember(address user);
+
+    /// @notice 声誉分数过低
+    error InsufficientReputation(address user, uint256 current, uint256 required);
+
+    /// @notice 并发案件数量过多
+    error TooManyConcurrentCases(address user, uint256 current, uint256 limit);
 
     // ==================== 奖惩相关错误 ====================
 

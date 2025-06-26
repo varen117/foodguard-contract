@@ -166,12 +166,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
                 config.minComplaintDeposit
             );
         }
-        if (msg.value > config.maxComplaintDeposit) {
-            revert Errors.ComplaintDepositExceedsLimit(
-                msg.value,
-                config.maxComplaintDeposit
-            );
-        }
 
         isUserRegistered[msg.sender] = true;
         isEnterprise[msg.sender] = false;
@@ -207,12 +201,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
                 config.minEnterpriseDeposit
             );
         }
-        if (msg.value > config.maxEnterpriseDeposit) {
-            revert Errors.EnterpriseDepositExceedsLimit(
-                msg.value,
-                config.maxEnterpriseDeposit
-            );
-        }
 
         isUserRegistered[msg.sender] = true;
         isEnterprise[msg.sender] = true;
@@ -227,7 +215,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
 
         emit Events.UserRegistered(
             msg.sender,
-            false,
+            true,
             msg.value,
             block.timestamp
         );
@@ -236,7 +224,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     /**
      * @notice 注册DAO成员
      */
-    function registerDaoUser() external payable whenNotPaused {
+    function registerDaoMember() external payable whenNotPaused {
         if (isUserRegistered[msg.sender]) {
             revert Errors.DuplicateOperation(msg.sender, "Registered");
         }
@@ -245,20 +233,14 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         if (msg.value < config.minDaoDeposit) {
             revert Errors.InsufficientValidatorDeposit(
                 msg.value,
-                config.minComplaintDeposit
-            );
-        }
-        if (msg.value > config.maxDaoDeposit) {
-            revert Errors.ValidatorDepositExceedsLimit(
-                msg.value,
-                config.maxDaoDeposit
+                config.minDaoDeposit
             );
         }
 
         isUserRegistered[msg.sender] = true;
         isEnterprise[msg.sender] = false;
 
-        // 在资金管理合约中注册企业保证金
+        // 在资金管理合约中注册DAO保证金
         fundManager.registerUserDeposit{value: msg.value}(
             msg.sender,
             msg.value
@@ -267,7 +249,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         emit Events.UserRegistered(
             msg.sender,
             false,
-            0, // DAO用户不需要保证金
+            msg.value,
             block.timestamp
         );
     }
@@ -326,23 +308,37 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             revert Errors.InsufficientEvidence(0, 1);
         }
 
-        if (riskLevel <= uint256(DataStructures.RiskLevel.HIGH)) {
+        if (riskLevel > uint8(DataStructures.RiskLevel.HIGH)) {
             revert Errors.InvalidRiskLevel(riskLevel);
         }
 
-        // 验证保证金
-        DataStructures.SystemConfig memory config = fundManager
-            .getSystemConfig();
-        if (msg.value < config.minComplaintDeposit) {
-            revert Errors.InsufficientComplaintDeposit(
-                msg.value,
-                config.minComplaintDeposit
+        DataStructures.RiskLevel riskLevelEnum = DataStructures.RiskLevel(riskLevel);
+
+        // 检查用户是否可以参与新案件（基于动态保证金系统）
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
+        if (!fundManager.canParticipateInCase(msg.sender, riskLevelEnum, config.minComplaintDeposit)) {
+            revert Errors.InsufficientDynamicDeposit(
+                msg.sender,
+                config.minComplaintDeposit,
+                fundManager.getAvailableDeposit(msg.sender)
             );
         }
-        if (msg.value > config.maxComplaintDeposit) {
-            revert Errors.ComplaintDepositExceedsLimit(
-                msg.value,
-                config.minComplaintDeposit);
+
+        // 检查企业是否可以参与新案件
+        if (!fundManager.canParticipateInCase(enterprise, riskLevelEnum, config.minEnterpriseDeposit)) {
+            revert Errors.InsufficientDynamicDeposit(
+                enterprise,
+                config.minEnterpriseDeposit,
+                fundManager.getAvailableDeposit(enterprise)
+            );
+        }
+
+        // 如果用户发送了额外的ETH，存入保证金
+        if (msg.value > 0) {
+            fundManager.registerUserDeposit{value: msg.value}(
+                msg.sender,
+                msg.value
+            );
         }
 
         // 创建新案件
@@ -359,8 +355,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         newCase.incidentTime = incidentTime;
         newCase.complaintTime = block.timestamp;
         newCase.status = DataStructures.CaseStatus.PENDING;
-        newCase.riskLevel = DataStructures.RiskLevel(riskLevel);
-        newCase.complainantDeposit = msg.value;
+        newCase.riskLevel = riskLevelEnum;
+        newCase.complainantDeposit = 0; // 将在锁定时确定
         newCase.isCompleted = false;
 
         emit Events.ComplaintCreated(
@@ -368,7 +364,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             msg.sender,
             enterprise,
             complaintTitle,
-            DataStructures.RiskLevel(riskLevel),
+            riskLevelEnum,
             block.timestamp
         );
 
@@ -379,65 +375,34 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     }
 
     /**
-     * @notice 步骤2: 锁定保证金
+     * @notice 步骤2: 锁定保证金（使用智能动态冻结）
      * @param caseId 案件ID
      */
     function _lockDeposits(uint256 caseId) internal {
         CaseInfo storage caseInfo = cases[caseId];
-        DataStructures.SystemConfig memory config = fundManager
-            .getSystemConfig();
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
 
-        // 先将投诉保证金存入用户账户，然后冻结
-        fundManager.registerUserDeposit{value: caseInfo.complainantDeposit}(
-            caseInfo.complainant,
-            caseInfo.complainantDeposit
-        );
-
-        // 冻结投诉者保证金
-        fundManager.freezeDeposit(
+        // 使用智能冻结投诉者保证金
+        fundManager.smartFreezeDeposit(
             caseId,
             caseInfo.complainant,
-            caseInfo.complainantDeposit
+            caseInfo.riskLevel,
+            config.minComplaintDeposit
         );
 
-        // 获取企业保证金要求
-        uint256 enterpriseDepositRequired = config.minEnterpriseDeposit;
+        // 记录实际冻结的投诉者保证金
+        caseInfo.complainantDeposit = fundManager.getCaseFrozenDeposit(caseId, caseInfo.complainant);
 
-        // 高风险案件直接冻结所有保证金
-        if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
-            // 冻结企业所有可用保证金
-            uint256 availableDeposit = fundManager.getAvailableDeposit(
-                caseInfo.enterprise
-            );
-            if (availableDeposit > 0) {
-                fundManager.freezeDeposit(
-                    caseId,
-                    caseInfo.enterprise,
-                    availableDeposit
-                );
-                caseInfo.enterpriseDeposit = availableDeposit;
+        // 使用智能冻结企业保证金
+        fundManager.smartFreezeDeposit(
+            caseId,
+            caseInfo.enterprise,
+            caseInfo.riskLevel,
+            config.minEnterpriseDeposit
+        );
 
-                emit Events.HighRiskCaseProcessed(
-                    caseId,
-                    caseInfo.complainantDeposit + availableDeposit,
-                    _getAffectedUsers(caseId),
-                    block.timestamp
-                );
-            }
-        } else {
-            // 中低风险案件冻结要求的保证金
-            if (
-                fundManager.getAvailableDeposit(caseInfo.enterprise) >=
-                enterpriseDepositRequired
-            ) {
-                fundManager.freezeDeposit(
-                    caseId,
-                    caseInfo.enterprise,
-                    enterpriseDepositRequired
-                );
-                caseInfo.enterpriseDeposit = enterpriseDepositRequired;
-            }
-        }
+        // 记录实际冻结的企业保证金
+        caseInfo.enterpriseDeposit = fundManager.getCaseFrozenDeposit(caseId, caseInfo.enterprise);
 
         // 更新案件状态
         caseInfo.status = DataStructures.CaseStatus.DEPOSIT_LOCKED;
@@ -449,6 +414,16 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             address(this),
             block.timestamp
         );
+
+        // 如果是高风险案件，发出特殊事件
+        if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
+            emit Events.HighRiskCaseProcessed(
+                caseId,
+                caseInfo.complainantDeposit + caseInfo.enterpriseDeposit,
+                _getAffectedUsers(caseId),
+                block.timestamp
+            );
+        }
 
         // 立即开始投票
         _startVoting(caseId);
@@ -464,7 +439,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             .getSystemConfig();
 
         // 随机选择验证者并开始投票
-        address[] memory selectedValidators = votingManager.startVotingSession(
+        votingManager.startVotingSession(
             caseId,
             config.votingPeriod,
             config.minValidators
@@ -530,7 +505,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         CaseInfo storage caseInfo = cases[caseId];
 
         // 结束质疑期
-        (bool finalResult, bool resultChanged) = disputeManager
+        (bool finalResult, ) = disputeManager
             .endDisputeSession(caseId, caseInfo.complaintUpheld);
 
         // 更新最终结果

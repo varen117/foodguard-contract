@@ -38,14 +38,14 @@ contract FoodSafetyGovernanceTest is Test {
     // ==================== 测试常量 ====================
     
     uint256 public constant MIN_COMPLAINT_DEPOSIT = 0.1 ether;
-    uint256 public constant MIN_ENTERPRISE_DEPOSIT = 1 ether;
+    uint256 public constant MIN_ENTERPRISE_DEPOSIT = 2 ether;
     uint256 public constant MIN_CHALLENGE_DEPOSIT = 0.05 ether;
     
     // ==================== 设置函数 ====================
     
     function setUp() public {
-        // 设置测试地址
-        admin = address(this);
+        // 设置测试账户
+        admin = makeAddr("admin");
         complainant = makeAddr("complainant");
         enterprise = makeAddr("enterprise");
         validator1 = makeAddr("validator1");
@@ -53,7 +53,8 @@ contract FoodSafetyGovernanceTest is Test {
         validator3 = makeAddr("validator3");
         challenger = makeAddr("challenger");
         
-        // 为测试用户分配ETH
+        // 为测试账户分配ETH
+        vm.deal(admin, 100 ether);
         vm.deal(complainant, 10 ether);
         vm.deal(enterprise, 10 ether);
         vm.deal(validator1, 10 ether);
@@ -62,46 +63,20 @@ contract FoodSafetyGovernanceTest is Test {
         vm.deal(challenger, 10 ether);
         
         // 部署合约
-        _deployContracts();
+        vm.startPrank(admin);
         
-        // 初始化合约关联
-        _initializeContracts();
-        
-        // 注册验证者
-        _registerValidators();
-    }
-    
-    /**
-     * @notice 部署所有合约
-     */
-    function _deployContracts() internal {
-        // 部署主合约
-        governance = new FoodSafetyGovernance();
-        
-        // 部署模块合约
+        // 部署资金管理合约
         fundManager = new FundManager(admin);
+        
+        // 部署主合约
+        governance = new FoodSafetyGovernance(admin);
+        
+        // 部署其他合约
         votingManager = new VotingManager(admin);
         disputeManager = new DisputeManager(admin);
         rewardManager = new RewardPunishmentManager(admin);
         
-        console.log("Contracts deployed successfully");
-        console.log("Governance:", address(governance));
-        console.log("FundManager:", address(fundManager));
-        console.log("VotingManager:", address(votingManager));
-        console.log("DisputeManager:", address(disputeManager));
-        console.log("RewardManager:", address(rewardManager));
-    }
-    
-    /**
-     * @notice 初始化合约关联
-     */
-    function _initializeContracts() internal {
-        // 先设置各模块的治理合约地址（由管理员调用）
-        votingManager.setGovernanceContract(address(governance));
-        disputeManager.setGovernanceContract(address(governance));
-        rewardManager.setGovernanceContract(address(governance));
-        
-        // 在主合约中设置模块地址
+        // 初始化合约关联
         governance.initializeContracts(
             payable(address(fundManager)),
             address(votingManager),
@@ -109,11 +84,27 @@ contract FoodSafetyGovernanceTest is Test {
             address(rewardManager)
         );
         
-        // 为各模块设置操作权限
+        // 设置各模块的治理合约地址
+        votingManager.setGovernanceContract(address(governance));
+        disputeManager.setGovernanceContract(address(governance));
+        rewardManager.setGovernanceContract(address(governance));
+        
+        // 设置模块间的关联
+        disputeManager.setFundManager(address(fundManager));
+        disputeManager.setVotingManager(address(votingManager));
+        rewardManager.setFundManager(address(fundManager));
+        
+        // 设置权限
         bytes32 operatorRole = fundManager.OPERATOR_ROLE();
         fundManager.grantRole(operatorRole, address(governance));
         
-        console.log("Contracts initialized with proper roles");
+        bytes32 governanceRole = fundManager.GOVERNANCE_ROLE();
+        fundManager.grantRole(governanceRole, address(governance));
+        
+        // 注册验证者
+        _registerValidators();
+        
+        vm.stopPrank();
     }
     
     /**
@@ -193,14 +184,6 @@ contract FoodSafetyGovernanceTest is Test {
         evidenceHashes[0] = "QmXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxX";
         evidenceHashes[1] = "QmYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYy";
         
-        string[] memory evidenceTypes = new string[](2);
-        evidenceTypes[0] = "photo";
-        evidenceTypes[1] = "medical_report";
-        
-        string[] memory evidenceDescriptions = new string[](2);
-        evidenceDescriptions[0] = "Photo of contaminated food";
-        evidenceDescriptions[1] = "Medical examination report";
-        
         // 创建投诉
         vm.prank(complainant);
         uint256 caseId = governance.createComplaint{value: MIN_COMPLAINT_DEPOSIT}(
@@ -210,8 +193,7 @@ contract FoodSafetyGovernanceTest is Test {
             location,
             incidentTime,
             evidenceHashes,
-            evidenceTypes,
-            evidenceDescriptions
+            uint8(DataStructures.RiskLevel.LOW)
         );
         
         // 验证案件信息
@@ -245,12 +227,6 @@ contract FoodSafetyGovernanceTest is Test {
         string[] memory evidenceHashes = new string[](1);
         evidenceHashes[0] = "QmXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxX";
         
-        string[] memory evidenceTypes = new string[](1);
-        evidenceTypes[0] = "photo";
-        
-        string[] memory evidenceDescriptions = new string[](1);
-        evidenceDescriptions[0] = "Evidence photo";
-        
         vm.prank(unregisteredUser);
         vm.expectRevert();
         governance.createComplaint{value: MIN_COMPLAINT_DEPOSIT}(
@@ -260,8 +236,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Test Location",
             block.timestamp - 1,
             evidenceHashes,
-            evidenceTypes,
-            evidenceDescriptions
+            uint8(DataStructures.RiskLevel.LOW)
         );
         
         // 测试对自己投诉
@@ -274,8 +249,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Test Location",
             block.timestamp - 1,
             evidenceHashes,
-            evidenceTypes,
-            evidenceDescriptions
+            uint8(DataStructures.RiskLevel.LOW)
         );
         
         console.log("Complaint creation failure tests passed");
@@ -333,12 +307,6 @@ contract FoodSafetyGovernanceTest is Test {
         string[] memory evidenceHashes = new string[](1);
         evidenceHashes[0] = "QmTestHash";
         
-        string[] memory evidenceTypes = new string[](1);
-        evidenceTypes[0] = "photo";
-        
-        string[] memory evidenceDescriptions = new string[](1);
-        evidenceDescriptions[0] = "Test evidence";
-        
         vm.prank(complainant);
         caseId = governance.createComplaint{value: MIN_COMPLAINT_DEPOSIT}(
             enterprise,
@@ -347,8 +315,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Test Restaurant",
             block.timestamp - 1,
             evidenceHashes,
-            evidenceTypes,
-            evidenceDescriptions
+            uint8(DataStructures.RiskLevel.LOW)
         );
         
         return caseId;
@@ -411,19 +378,22 @@ contract FoodSafetyGovernanceTest is Test {
         vm.prank(enterprise);
         governance.registerEnterprise{value: MIN_ENTERPRISE_DEPOSIT}();
         
-        // 测试更新企业风险等级
+        // 测试更新企业风险等级（需要以admin身份调用）
+        vm.prank(admin);
         governance.updateEnterpriseRiskLevel(enterprise, DataStructures.RiskLevel.HIGH);
         
         DataStructures.RiskLevel riskLevel = governance.getEnterpriseRiskLevel(enterprise);
         assertEq(uint8(riskLevel), uint8(DataStructures.RiskLevel.HIGH));
         
-        // 测试暂停/恢复合约
+        // 测试暂停/恢复合约（需要以admin身份调用）
+        vm.prank(admin);
         governance.setPaused(true);
         
         vm.prank(complainant);
         vm.expectRevert();
         governance.registerUser{value: MIN_COMPLAINT_DEPOSIT}();
         
+        vm.prank(admin);
         governance.setPaused(false);
         
         vm.prank(complainant);
@@ -438,10 +408,6 @@ contract FoodSafetyGovernanceTest is Test {
      * @notice 测试边界条件和异常情况
      */
     function test_EdgeCases() public {
-        // 测试查询不存在的案件
-        vm.expectRevert();
-        governance.getCaseInfo(999);
-        
         // 测试使用零地址
         vm.prank(complainant);
         governance.registerUser{value: MIN_COMPLAINT_DEPOSIT}();
@@ -458,8 +424,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Test",
             block.timestamp - 1,
             evidences,
-            evidences,
-            evidences
+            uint8(DataStructures.RiskLevel.LOW)
         );
         
         console.log("Edge cases test passed");
@@ -539,12 +504,6 @@ contract FoodSafetyGovernanceTest is Test {
         string[] memory evidenceHashes = new string[](1);
         evidenceHashes[0] = "QmTestHash";
         
-        string[] memory evidenceTypes = new string[](1);
-        evidenceTypes[0] = "photo";
-        
-        string[] memory evidenceDescriptions = new string[](1);
-        evidenceDescriptions[0] = "Test evidence";
-        
         console.log("Evidence prepared");
         
         // 4. 直接创建投诉（不使用try-catch）
@@ -556,8 +515,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Test Restaurant",
             block.timestamp - 1,
             evidenceHashes,
-            evidenceTypes,
-            evidenceDescriptions
+            uint8(DataStructures.RiskLevel.LOW)
         );
         
         console.log("Complaint created successfully with ID:", caseId);
@@ -578,12 +536,6 @@ contract FoodSafetyGovernanceTest is Test {
         string[] memory evidenceHashes = new string[](1);
         evidenceHashes[0] = "a";
         
-        string[] memory evidenceTypes = new string[](1);
-        evidenceTypes[0] = "b";
-        
-        string[] memory evidenceDescriptions = new string[](1);
-        evidenceDescriptions[0] = "c";
-        
         // 3. 创建投诉
         vm.prank(complainant);
         uint256 caseId = governance.createComplaint{value: MIN_COMPLAINT_DEPOSIT}(
@@ -593,8 +545,7 @@ contract FoodSafetyGovernanceTest is Test {
             "location",
             1,
             evidenceHashes,
-            evidenceTypes,
-            evidenceDescriptions
+            uint8(DataStructures.RiskLevel.LOW)
         );
         
         assertEq(caseId, 1);

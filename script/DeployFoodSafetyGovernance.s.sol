@@ -63,28 +63,28 @@ contract DeployFoodSafetyGovernance is Script {
      * @notice 第一步：部署所有合约
      */
     function _deployContracts() internal {
-        console.log("\n=== Step 1: Deploying Contracts ===");
-
-        // 部署主治理合约
-        governance = new FoodSafetyGovernance();
-        console.log("FoodSafetyGovernance deployed at:", address(governance));
-
+        console.log("Step 1: Deploying contracts...");
+        
         // 部署资金管理合约
         fundManager = new FundManager(deployer);
         console.log("FundManager deployed at:", address(fundManager));
-
+        
+        // 部署治理主合约
+        governance = new FoodSafetyGovernance(deployer);
+        console.log("FoodSafetyGovernance deployed at:", address(governance));
+        
         // 部署投票管理合约
         votingManager = new VotingManager(deployer);
         console.log("VotingManager deployed at:", address(votingManager));
-
+        
         // 部署质疑管理合约
         disputeManager = new DisputeManager(deployer);
         console.log("DisputeManager deployed at:", address(disputeManager));
-
+        
         // 部署奖惩管理合约
         rewardManager = new RewardPunishmentManager(deployer);
         console.log("RewardPunishmentManager deployed at:", address(rewardManager));
-
+        
         console.log("All contracts deployed successfully!");
     }
 
@@ -184,41 +184,58 @@ contract DeployFoodSafetyGovernance is Script {
      * @notice 第五步：输出部署信息
      */
     function _outputDeploymentInfo() internal view {
-        console.log("\n=== Deployment Summary ===");
-        console.log("Network: Deployed successfully");
-        console.log("Deployer:", deployer);
-        console.log("Gas used: Check transaction receipts");
-
-        console.log("\n=== Contract Addresses ===");
-        console.log("FoodSafetyGovernance:", address(governance));
-        console.log("FundManager:", address(fundManager));
-        console.log("VotingManager:", address(votingManager));
-        console.log("DisputeManager:", address(disputeManager));
-        console.log("RewardPunishmentManager:", address(rewardManager));
-
         console.log("\n=== System Configuration ===");
         DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
         console.log("Min Complaint Deposit:", config.minComplaintDeposit);
         console.log("Min Enterprise Deposit:", config.minEnterpriseDeposit);
-        console.log("Min Challenge Deposit:", config.minChallengeDeposit);
+        console.log("Min DAO Deposit:", config.minDaoDeposit);
         console.log("Voting Period (seconds):", config.votingPeriod);
         console.log("Challenge Period (seconds):", config.challengePeriod);
         console.log("Min Validators:", config.minValidators);
         console.log("Max Validators:", config.maxValidators);
 
+        console.log("\n=== Dynamic Deposit Configuration ===");
+        DataStructures.DynamicDepositConfig memory dynamicConfig = fundManager.getDynamicConfig();
+        console.log("Warning Threshold:", dynamicConfig.warningThreshold, "%");
+        console.log("Restriction Threshold:", dynamicConfig.restrictionThreshold, "%");
+        console.log("Liquidation Threshold:", dynamicConfig.liquidationThreshold, "%");
+        console.log("High Risk Multiplier:", dynamicConfig.highRiskMultiplier, "%");
+        console.log("Medium Risk Multiplier:", dynamicConfig.mediumRiskMultiplier, "%");
+        console.log("Low Risk Multiplier:", dynamicConfig.lowRiskMultiplier, "%");
+
+        console.log("\n=== Mutual Pool Status ===");
+        DataStructures.MutualGuaranteePool memory poolStatus = fundManager.getMutualPoolStatus();
+        console.log("Pool Active:", poolStatus.isActive);
+        console.log("Total Balance:", poolStatus.totalBalance);
+        console.log("Active Members:", poolStatus.activeMembers);
+
         console.log("\n=== Next Steps ===");
-        console.log("1. Register validators using VotingManager.registerValidator()");
-        console.log("2. Users can register using FoodSafetyGovernance.registerUser()");
-        console.log("3. Enterprises can register using FoodSafetyGovernance.registerEnterprise()");
-        console.log("4. Start creating complaints using FoodSafetyGovernance.createComplaint()");
+        console.log("1. Register users with: governance.registerUser{value: 0.05 ether}()");
+        console.log("2. Register enterprises with: governance.registerEnterprise{value: 1 ether}()");
+        console.log("3. Join mutual pool with: fundManager.joinMutualPool{value: 0.1 ether}(0.1 ether)");
+        console.log("4. Create complaints and test dynamic deposit management");
+        console.log("5. Monitor user deposit status with: fundManager.getUserDepositStatus(user)");
+        console.log("\n=== Advanced Features ===");
+        console.log("- Dynamic deposit calculation based on risk level and reputation");
+        console.log("- Automatic status management (Warning -> Restriction -> Liquidation)");
+        console.log("- Mutual guarantee pool for deposit assistance");
+        console.log("- Smart freeze with automatic mutual pool usage");
+        console.log("- Reputation-based deposit discounts/penalties");
 
-        console.log("\n=== Important Notes ===");
-        console.log("- Save these contract addresses for frontend integration");
-        console.log("- Ensure proper network configuration in your .env file");
-        console.log("- Remember to fund user accounts for testing");
-        console.log("- Monitor gas costs and optimize if necessary");
+        console.log("\n=== Management Functions ===");
+        console.log("- Update dynamic config: fundManager.updateDynamicConfig()");
+        console.log("- Batch status check: fundManager.batchCheckUserStatus()");
+        console.log("- Update reputation: fundManager.updateUserReputation()");
+        console.log("- Check participation eligibility: fundManager.canParticipateInCase()");
 
-        console.log("\nFood Safety Governance System deployed successfully!");
+        console.log("\n=== Deployment Summary ===");
+        console.log("[SUCCESS] All contracts deployed successfully");
+        console.log("[SUCCESS] Dynamic deposit management enabled");
+        console.log("[SUCCESS] Mutual guarantee pool initialized");
+        console.log("[SUCCESS] Smart liquidation system active");
+        console.log("[SUCCESS] Reputation-based discounts configured");
+
+        console.log("\nFood Safety Governance with Dynamic Deposits is ready!");
     }
 
     // ==================== 辅助部署函数 ====================
@@ -228,9 +245,10 @@ contract DeployFoodSafetyGovernance is Script {
      */
     function deployGovernanceOnly() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        deployer = vm.addr(deployerPrivateKey);
         vm.startBroadcast(deployerPrivateKey);
 
-        governance = new FoodSafetyGovernance();
+        governance = new FoodSafetyGovernance(deployer);
         console.log("FoodSafetyGovernance deployed at:", address(governance));
 
         vm.stopBroadcast();

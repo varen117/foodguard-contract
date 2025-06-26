@@ -145,6 +145,81 @@ library Events {
         uint256 timestamp
     );
 
+    // ==================== 动态保证金相关事件 ====================
+
+    /**
+     * @notice 保证金状态变更事件
+     */
+    event DepositStatusChanged(
+        address indexed user,
+        uint8 oldStatus,
+        uint8 newStatus,
+        uint256 coverage,
+        uint256 timestamp
+    );
+
+    /**
+     * @notice 保证金警告事件
+     */
+    event DepositWarning(
+        address indexed user,
+        uint256 required,
+        uint256 available,
+        uint256 coverage,
+        uint256 timestamp
+    );
+
+    /**
+     * @notice 用户操作限制事件
+     */
+    event UserOperationRestricted(
+        address indexed user,
+        string reason,
+        uint256 timestamp
+    );
+
+    /**
+     * @notice 用户清算事件
+     */
+    event UserLiquidated(
+        address indexed user,
+        uint256 liquidatedAmount,
+        uint256 penalty,
+        string reason,
+        uint256 timestamp
+    );
+
+    /**
+     * @notice 互助池相关事件
+     */
+    event MutualPoolContribution(
+        address indexed user,
+        uint256 amount,
+        uint256 totalContribution,
+        uint256 timestamp
+    );
+
+    /**
+     * @notice 互助池担保事件
+     */
+    event MutualPoolCoverage(
+        address indexed beneficiary,
+        uint256 amount,
+        uint256 poolBalance,
+        uint256 timestamp
+    );
+
+    /**
+     * @notice 动态保证金要求更新事件
+     */
+    event DynamicDepositRequirementUpdated(
+        address indexed user,
+        uint256 oldRequired,
+        uint256 newRequired,
+        string reason,
+        uint256 timestamp
+    );
+
     // ==================== 验证投票事件 ====================
 
     /**

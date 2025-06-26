@@ -209,4 +209,67 @@ library DataStructures {
         uint256 rewardPoolPercentage; // 奖励池百分比
         uint256 operationalFeePercentage; // 运营费用百分比
     }
+
+    /**
+     * @notice 动态保证金配置
+     */
+    struct DynamicDepositConfig {
+        uint256 warningThreshold; // 警告阈值 (130%)
+        uint256 restrictionThreshold; // 限制阈值 (120%)
+        uint256 liquidationThreshold; // 清算阈值 (110%)
+        uint256 highRiskMultiplier; // 高风险倍数 (200%)
+        uint256 mediumRiskMultiplier; // 中风险倍数 (150%)
+        uint256 lowRiskMultiplier; // 低风险倍数 (120%)
+        uint256 concurrentCaseExtra; // 并发案件额外要求 (50% per case)
+        uint256 reputationDiscountThreshold; // 声誉折扣门槛 (800分)
+        uint256 reputationDiscountRate; // 声誉折扣率 (20%)
+        uint256 reputationPenaltyThreshold; // 声誉惩罚门槛 (300分)
+        uint256 reputationPenaltyRate; // 声誉惩罚率 (50%)
+    }
+
+    /**
+     * @notice 用户保证金状态
+     */
+    enum DepositStatus {
+        HEALTHY,    // 健康状态
+        WARNING,    // 警告状态
+        RESTRICTED, // 限制状态
+        LIQUIDATION // 清算状态
+    }
+
+    /**
+     * @notice 用户保证金档案
+     */
+    struct UserDepositProfile {
+        uint256 totalDeposit;           // 总保证金
+        uint256 frozenAmount;           // 冻结金额
+        uint256 requiredAmount;         // 所需保证金
+        uint256 activeCaseCount;        // 活跃案件数量
+        uint256 poolContribution;       // 互助池贡献
+        DepositStatus status;           // 保证金状态
+        uint256 lastWarningTime;        // 最后警告时间
+        bool operationRestricted;       // 是否限制操作
+    }
+
+    /**
+     * @notice 互助保证金池信息
+     */
+    struct MutualGuaranteePool {
+        uint256 totalBalance;           // 池子总余额
+        uint256 totalContributions;     // 总贡献金额
+        uint256 activeMembers;          // 活跃成员数
+        uint256 coverageProvided;       // 已提供的担保金额
+        bool isActive;                  // 是否激活
+    }
+
+    /**
+     * @notice 用户在互助池中的信息
+     */
+    struct PoolMemberInfo {
+        uint256 contribution;           // 贡献金额
+        uint256 benefitReceived;        // 已获得的收益
+        uint256 joinTime;              // 加入时间
+        bool isActive;                 // 是否活跃
+        uint256 lastActiveTime;        // 最后活跃时间
+    }
 }
