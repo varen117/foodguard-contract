@@ -13,12 +13,6 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 interface IVotingManager {
     function isSelectedValidator(uint256 caseId, address validator) external view returns (bool);
 
-    function setSupportersNumber(
-        DataStructures.VoteChoice choice,
-        address voterAddress,
-        address doubterAddress,
-        uint256 caseId
-    ) external;
 }
 
 /**
@@ -95,6 +89,7 @@ contract DisputeManager is Ownable {
         bool resultChanged; // 结果是否改变 - 质疑是否成功改变了投票结果
         // 质疑信息数组 - 存储所有提交的质疑详情
         DataStructures.ChallengeInfo[] challenges;
+        mapping(address => DataStructures.ChallengeVotingInfo) challengeVotingInfo; // 质疑投票信息映射
         // 验证者质疑统计 validator => ChallengeStats
         mapping(address => ChallengeStats) validatorChallengeStats;
         // 质疑者映射 challenger => true - 快速查询某地址是否参与质疑
@@ -275,13 +270,14 @@ contract DisputeManager is Ownable {
             challengeDeposit: challengeDeposit // 质疑保证金
         });
 
-        // 将质疑者的支持者数量更新到投票管理合约
-        votingManager.setSupportersNumber(
-            choice,
-            targetValidator,
-            msg.sender,
-            caseId
-        );
+        // 更新质疑投票信息
+        DataStructures.ChallengeVotingInfo challengeVotingInfo = challengeVotingInfo[targetValidator];
+        challengeVotingInfo.targetValidator = targetValidator;
+        if (choice == DataStructures.ChallengeChoice.SUPPORT_VALIDATOR) {
+            challengeVotingInfo.supporters.push(msg.sender); // 添加支持者
+        } else {
+            challengeVotingInfo.opponents.push(msg.sender); // 添加反对者
+        }
 
         // 将质疑添加到会话中
         session.challenges.push(challengeInfo);

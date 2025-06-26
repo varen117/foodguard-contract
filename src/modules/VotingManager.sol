@@ -751,30 +751,4 @@ contract VotingManager is Ownable {
         );
     }
 
-    /**
-     * @notice 设置支持者数量
-     * @dev 由治理合约调用，更新验证者的某个投票的支持者和反对者数量
-     * 用于记录质疑信息和投票结果
-     * @param choice 投票选择（支持或反对投诉）
-     * @param voterAddress 投票者地址
-     * @param doubterAddress 质疑者地址
-     */
-    function setSupportersNumber(
-        DataStructures.VoteChoice choice,
-        address voterAddress,
-        address doubterAddress,
-        uint256 caseId
-    ) external onlyGovernance {
-        DataStructures.VoteInfo voteInfo = votingSessions[caseId].votes[msg.voterAddress];
-        if (choice == DataStructures.VoteChoice.SUPPORT_COMPLAINT) {
-            voteInfo.SupportersNumber += 1;
-            voteInfo.supporters.push(doubterAddress);
-        } else if (choice == DataStructures.VoteChoice.REJECT_COMPLAINT) {
-            voteInfo.OpponentsNumber += 1;
-            voteInfo.opponents.push(doubterAddress);
-        } else {
-            revert Errors.InvalidVoteChoice(choice);
-        }
-
-    }
 }

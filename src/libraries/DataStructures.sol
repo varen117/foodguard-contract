@@ -120,6 +120,18 @@ library DataStructures {
     }
 
     /**
+     * @notice 质疑投票信息结构体
+     * @dev 记录对质疑的投票信息，确保质疑过程透明
+     */
+    struct ChallengeVotingInfo {
+        address targetValidator; // 被质疑的验证者地址 - 质疑的目标验证者
+        uint256 SupportersNumber; // 支持者数量（支持该投票的质疑者数量）
+        uint256 OpponentsNumber; // 反对者数量（反对该投票的质疑者数量）
+        address[] supporters; // 支持者列表（支持该投票的质疑者地址）
+        address[] opponents; // 反对者列表（反对该投票的质疑者地址）
+    }
+
+    /**
      * @notice 用户状态信息结构体
      * @dev 全面记录用户在系统中的状态和表现
      * 这是用户信誉和参与能力的综合体现
