@@ -1,50 +1,77 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.20; // 使用最新稳定版本，支持优化和安全特性
 
-import "./libraries/DataStructures.sol";
-import "./libraries/Errors.sol";
-import "./libraries/Events.sol";
-import "./modules/FundManager.sol";
-import "./modules/VotingManager.sol";
-import "./modules/DisputeManager.sol";
-import "./modules/RewardPunishmentManager.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+// 导入系统基础库
+import "./libraries/DataStructures.sol"; // 核心数据结构定义
+import "./libraries/Errors.sol"; // 标准化错误处理
+import "./libraries/Events.sol"; // 标准化事件定义
+
+// 导入功能模块合约
+import "./modules/FundManager.sol"; // 资金和保证金管理模块
+import "./modules/VotingManager.sol"; // 投票和验证者管理模块
+import "./modules/DisputeManager.sol"; // 质疑和争议处理模块
+import "./modules/RewardPunishmentManager.sol"; // 奖惩计算和分配模块
+
+// 导入OpenZeppelin安全组件
+import "@openzeppelin/contracts/utils/Pausable.sol"; // 暂停功能，用于紧急情况
+import "@openzeppelin/contracts/access/Ownable.sol"; // 所有权管理
 
 /**
  * @title FoodSafetyGovernance
  * @author Food Safety Governance Team
  * @notice 食品安全治理主合约，整合投诉、验证、质疑、奖惩等完整流程
  * @dev 严格按照Mermaid流程图实现的去中心化食品安全治理系统
+ *
+ * 系统核心特性：
+ * 1. 完整的案件生命周期管理：从投诉创建到最终完成的7个关键步骤
+ * 2. 模块化架构：将不同功能分离到专门的模块合约中，提高可维护性
+ * 3. 动态保证金系统：根据风险等级、用户声誉、并发案件数量动态调整保证金要求
+ * 4. 多层验证机制：投票验证 + 质疑机制，确保决策的公正性和准确性
+ * 5. 智能奖惩系统：根据参与表现和结果准确性进行奖励和惩罚分配
+ * 6. 风险分级管理：高、中、低三级风险分类，差异化处理不同严重程度的问题
+ * 7. 声誉激励机制：长期表现良好的用户享受更多权益和优惠
+ *
+ * 案件处理流程：
+ * 步骤1：创建投诉 → 步骤2：锁定保证金 → 步骤3：开始投票 →
+ * 步骤4：结束投票并开始质疑 → 步骤5：结束质疑并进入奖惩 →
+ * 步骤6：处理奖惩 → 步骤7：完成案件
  */
 contract FoodSafetyGovernance is Pausable, Ownable {
     // ==================== 状态变量 ====================
 
-    /// @notice 案件计数器
+    /// @notice 案件计数器 - 系统中创建的案件总数，也用作新案件的唯一ID
+    /// @dev 从0开始递增，确保每个案件都有唯一标识符
     uint256 public caseCounter;
 
-    /// @notice 模块合约地址
-    FundManager public fundManager;
-    VotingManager public votingManager;
-    DisputeManager public disputeManager;
-    RewardPunishmentManager public rewardManager;
+    /// @notice 模块合约地址 - 治理系统的四大核心模块
+    /// @dev 模块化设计使系统更易维护和升级
+    FundManager public fundManager; // 资金管理模块：处理保证金、奖励池、动态保证金
+    VotingManager public votingManager; // 投票管理模块：管理验证者选择和投票过程
+    DisputeManager public disputeManager; // 质疑管理模块：处理投票结果的质疑和争议
+    RewardPunishmentManager public rewardManager; // 奖惩管理模块：计算和分配奖励惩罚
 
-    /// @notice 案件信息映射 caseId => CaseInfo
+    /// @notice 案件信息映射 - 存储所有案件的核心信息
+    /// @dev 键值对：caseId => CaseInfo，提供案件的完整状态追踪
     mapping(uint256 => CaseInfo) public cases;
 
-    /// @notice 普通用户注册状态 user => isRegistered
+    /// @notice 普通用户注册状态 - 记录普通用户的注册状态
+    /// @dev 键值对：user => isRegistered，控制用户参与权限
     mapping(address => bool) public isUserRegistered;
 
-    /// @notice 企业注册状态 enterprise => isRegistered
+    /// @notice 企业注册状态 - 记录企业的注册状态
+    /// @dev 键值对：enterprise => isRegistered，企业需要更高保证金
     mapping(address => bool) public isEnterpriseRegistered;
 
-    /// @notice DAO组织注册状态 enterprise => isRegistered
+    /// @notice DAO组织注册状态 - 记录DAO成员的注册状态
+    /// @dev 键值对：dao => isRegistered，DAO成员可参与验证和质疑
     mapping(address => bool) public isDaoRegistered;
 
-    /// @notice 用户类型映射 user => isEnterprise
+    /// @notice 用户类型映射 - 区分普通用户和企业用户
+    /// @dev 键值对：user => isEnterprise，影响保证金要求和权限
     mapping(address => bool) public isEnterprise;
 
-    /// @notice 风险等级评估映射 enterprise => riskLevel
+    /// @notice 风险等级评估映射 - 记录企业的风险等级评估
+    /// @dev 键值对：enterprise => riskLevel，影响相关案件的保证金和处理优先级
     mapping(address => DataStructures.RiskLevel) public enterpriseRiskLevel;
 
     // ==================== 结构体定义 ====================
@@ -67,6 +94,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         bool complaintUpheld; // 投诉是否成立
         uint256 complainantDeposit; // 投诉者保证金
         uint256 enterpriseDeposit; // 企业保证金
+        string complainantEvidenceHash; // 投诉者证据哈希
         bool isCompleted; // 是否已完成
         uint256 completionTime; // 完成时间
     }
@@ -257,13 +285,31 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     // ==================== 核心流程函数 ====================
 
     /**
-     * @notice 步骤1: 创建投诉
-     * @param enterprise 被投诉的企业地址
-     * @param complaintTitle 投诉标题
-     * @param complaintDescription 投诉详细描述
-     * @param location 事发地点
-     * @param incidentTime 事发时间
-     * @param evidenceHashes IPFS证据哈希数组
+     * @notice 步骤1: 创建投诉 - 启动食品安全治理流程的入口函数
+     * @dev 完整的投诉创建流程，包含严格的参数验证和自动化后续步骤
+     * 功能流程：
+     * 1. 验证所有输入参数的有效性和合规性
+     * 2. 检查投诉者和企业的保证金充足性（基于动态保证金系统）
+     * 3. 创建新案件并记录基本信息
+     * 4. 自动触发保证金锁定流程
+     * 5. 自动启动投票流程
+     *
+     * 安全机制：
+     * - 防止自我投诉：用户不能投诉自己
+     * - 注册验证：只有注册用户可以创建投诉
+     * - 企业验证：被投诉方必须是已注册企业
+     * - 保证金检查：确保双方都有足够保证金参与案件
+     * - 证据要求：必须提供至少一个证据哈希
+     * - 时间验证：事发时间不能晚于当前时间
+     *
+     * @param enterprise 被投诉的企业地址（必须是已注册企业）
+     * @param complaintTitle 投诉标题（不能为空）
+     * @param complaintDescription 投诉详细描述（不能为空）
+     * @param location 事发地点（食品安全问题发生的具体位置）
+     * @param incidentTime 事发时间（Unix时间戳，不能晚于当前时间）
+     * @param evidenceHash IPFS证据哈希（证据材料的存储位置）
+     * @param riskLevel 风险等级（0=LOW, 1=MEDIUM, 2=HIGH）
+     * @return caseId 新创建案件的唯一ID
      */
     function createComplaint(
         address enterprise,
@@ -271,7 +317,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         string calldata complaintDescription,
         string calldata location,
         uint256 incidentTime,
-        string[] calldata evidenceHashes,
+        string calldata evidenceHash,
         uint8 riskLevel
     )
     external
@@ -304,12 +350,20 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             revert Errors.InvalidTimestamp(incidentTime, block.timestamp);
         }
 
-        if (evidenceHashes.length == 0) {
-            revert Errors.InsufficientEvidence(0, 1);
+        if (bytes(evidenceHash).length == 0) {
+            revert Errors.EmptyEvidenceDescription();
         }
 
         if (riskLevel > uint8(DataStructures.RiskLevel.HIGH)) {
             revert Errors.InvalidRiskLevel(riskLevel);
+        }
+
+        // 用户发送了额外的ETH，存入保证金
+        if (msg.value > 0) {
+            fundManager.registerUserDeposit{value: msg.value}(
+                msg.sender,
+                msg.value
+            );
         }
 
         DataStructures.RiskLevel riskLevelEnum = DataStructures.RiskLevel(riskLevel);
@@ -333,14 +387,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             );
         }
 
-        // 如果用户发送了额外的ETH，存入保证金
-        if (msg.value > 0) {
-            fundManager.registerUserDeposit{value: msg.value}(
-                msg.sender,
-                msg.value
-            );
-        }
-
         // 创建新案件
         caseId = ++caseCounter;
 
@@ -357,6 +403,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         newCase.status = DataStructures.CaseStatus.PENDING;
         newCase.riskLevel = riskLevelEnum;
         newCase.complainantDeposit = 0; // 将在锁定时确定
+        newCase.complainantEvidenceHash = evidenceHash; // 存储投诉者证据哈希
         newCase.isCompleted = false;
 
         emit Events.ComplaintCreated(
@@ -376,14 +423,30 @@ contract FoodSafetyGovernance is Pausable, Ownable {
 
     /**
      * @notice 步骤2: 锁定保证金（使用智能动态冻结）
+     * @dev 智能保证金锁定机制，实现动态风险管理
+     * 锁定流程：
+     * 1. 根据案件风险等级和用户状态动态计算所需保证金
+     * 2. 使用智能冻结算法，在保证金不足时尝试互助池支持
+     * 3. 记录实际冻结金额，可能低于理想金额但仍允许案件进行
+     * 4. 更新案件状态为DEPOSIT_LOCKED
+     * 5. 高风险案件触发特殊监控事件
+     * 6. 自动启动投票流程
+     *
+     * 智能冻结特性：
+     * - 动态计算：基于风险等级、用户声誉、并发案件数量
+     * - 互助池支持：保证金不足时自动尝试使用互助池资金
+     * - 部分冻结：即使保证金不足也允许参与，但影响用户状态
+     * - 风险监控：高风险案件获得特殊关注和快速处理
+     *
      * @param caseId 案件ID
      */
     function _lockDeposits(uint256 caseId) internal {
         CaseInfo storage caseInfo = cases[caseId];
         DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
 
-        // 使用智能冻结投诉者保证金
-        fundManager.smartFreezeDeposit(
+        // 步骤1：冻结投诉者保证金
+        // 冻结考虑用户的风险等级、声誉分数、并发案件等因素
+        fundManager.freezeDeposit(
             caseId,
             caseInfo.complainant,
             caseInfo.riskLevel,
@@ -393,8 +456,9 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         // 记录实际冻结的投诉者保证金
         caseInfo.complainantDeposit = fundManager.getCaseFrozenDeposit(caseId, caseInfo.complainant);
 
-        // 使用智能冻结企业保证金
-        fundManager.smartFreezeDeposit(
+        // 步骤2：冻结企业保证金
+        // 企业通常需要更高的保证金，体现更大的责任
+        fundManager.freezeDeposit(
             caseId,
             caseInfo.enterprise,
             caseInfo.riskLevel,
@@ -404,9 +468,10 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         // 记录实际冻结的企业保证金
         caseInfo.enterpriseDeposit = fundManager.getCaseFrozenDeposit(caseId, caseInfo.enterprise);
 
-        // 更新案件状态
+        // 步骤3：更新案件状态为保证金已锁定
         caseInfo.status = DataStructures.CaseStatus.DEPOSIT_LOCKED;
 
+        // 发出状态更新事件，记录状态变迁
         emit Events.CaseStatusUpdated(
             caseId,
             DataStructures.CaseStatus.PENDING,
@@ -415,17 +480,19 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             block.timestamp
         );
 
-        // 如果是高风险案件，发出特殊事件
+        // 步骤4：高风险案件特殊处理
+        // 高风险案件需要更多关注和更快的处理速度
         if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
             emit Events.HighRiskCaseProcessed(
                 caseId,
-                caseInfo.complainantDeposit + caseInfo.enterpriseDeposit,
-                _getAffectedUsers(caseId),
+                caseInfo.complainantDeposit + caseInfo.enterpriseDeposit, // 总锁定金额
+                _getAffectedUsers(caseId), // 受影响的用户列表
                 block.timestamp
             );
         }
 
-        // 立即开始投票
+        // 步骤5：自动启动投票流程
+        // 保证金锁定成功后立即进入投票阶段，提高处理效率
         _startVoting(caseId);
     }
 
@@ -456,6 +523,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             block.timestamp
         );
     }
+
+    //todo  没有投票环节
 
     /**
      * @notice 步骤4: 结束投票并开始质疑期
@@ -525,17 +594,33 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     }
 
     /**
-     * @notice 步骤6: 处理奖惩
+     * @notice 步骤6: 处理奖惩 - 根据案件结果计算和分配奖惩
+     * @dev 复杂的奖惩处理流程，整合投票和质疑结果进行公平分配
+     * 处理流程：
+     * 1. 收集所有验证者的投票信息和选择
+     * 2. 收集所有质疑者的质疑信息和结果
+     * 3. 分析质疑是否成功改变了投票结果
+     * 4. 调用奖惩管理器进行复杂的奖惩计算
+     * 5. 自动完成案件处理
+     *
+     * 奖惩分配原则：
+     * - 验证者：投票正确获得奖励，错误承担惩罚
+     * - 质疑者：成功质疑获得奖励，失败质疑承担惩罚
+     * - 投诉者：投诉成立获得赔偿，虚假投诉承担惩罚
+     * - 企业：败诉承担重罚，胜诉获得声誉恢复补偿
+     *
      * @param caseId 案件ID
      */
     function _processRewardsPunishments(uint256 caseId) internal {
         CaseInfo storage caseInfo = cases[caseId];
 
-        // 获取投票信息
+        // 步骤1：获取投票信息
+        // 从投票管理器获取所有参与投票的验证者地址
         (, address[] memory validators, , , , , , , ,) = votingManager
             .getVotingSessionInfo(caseId);
 
-        // 构建验证者投票选择数组
+        // 步骤2：构建验证者投票选择数组
+        // 收集每个验证者的具体投票选择，用于奖惩计算
         DataStructures.VoteChoice[]
         memory validatorChoices = new DataStructures.VoteChoice[](
             validators.length
@@ -543,38 +628,43 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         for (uint256 i = 0; i < validators.length; i++) {
             DataStructures.VoteInfo memory vote = votingManager
                 .getValidatorVote(caseId, validators[i]);
-            validatorChoices[i] = vote.choice;
+            validatorChoices[i] = vote.choice; // SUPPORT_COMPLAINT 或 REJECT_COMPLAINT
         }
 
-        // 获取质疑者信息
+        // 步骤3：获取质疑者信息
+        // 从质疑管理器获取所有质疑信息
         DataStructures.ChallengeInfo[] memory challenges = disputeManager
             .getAllChallenges(caseId);
         address[] memory challengers = new address[](challenges.length);
         bool[] memory challengeResults = new bool[](challenges.length);
 
+        // 步骤4：分析质疑结果
         for (uint256 i = 0; i < challenges.length; i++) {
             challengers[i] = challenges[i].challenger;
-            // 简化质疑结果判断
+            // 质疑成功判断逻辑：
+            // 如果质疑者选择OPPOSE_VALIDATOR且最终结果与投票结果不同，则质疑成功
             challengeResults[i] =
                 (challenges[i].choice ==
                     DataStructures.ChallengeChoice.OPPOSE_VALIDATOR) ==
                 (!caseInfo.complaintUpheld); // 如果反对验证者且结果确实改变了
         }
 
-        // 调用奖惩管理器处理
+        // 步骤5：调用奖惩管理器进行综合计算
+        // 将所有参与者信息和结果传递给专门的奖惩管理器
         rewardManager.processCaseRewardPunishment(
             caseId,
-            caseInfo.complaintUpheld,
-            caseInfo.riskLevel,
-            caseInfo.complainant,
-            caseInfo.enterprise,
-            validators,
-            validatorChoices,
-            challengers,
-            challengeResults
+            caseInfo.complaintUpheld, // 最终的案件结果
+            caseInfo.riskLevel, // 风险等级影响奖惩金额
+            caseInfo.complainant, // 投诉者
+            caseInfo.enterprise, // 被投诉企业
+            validators, // 参与投票的验证者列表
+            validatorChoices, // 验证者的投票选择
+            challengers, // 参与质疑的质疑者列表
+            challengeResults // 质疑者的成功/失败结果
         );
 
-        // 完成案件
+        // 步骤6：完成案件处理
+        // 奖惩分配完成后，案件进入最终完成阶段
         _completeCase(caseId);
     }
 

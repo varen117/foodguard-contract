@@ -11,31 +11,41 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @author Food Safety Governance Team
  * @notice 质疑管理模块，负责处理对验证者投票结果的质疑
  * @dev 管理质疑流程，包括质疑提交、保证金管理、结果计算等
+ * 这是确保投票公正性的重要模块，允许社区对验证者的决定提出异议
+ * 通过质疑机制可以纠正可能的错误判断，维护系统的公正性
  */
 contract DisputeManager is Ownable {
     // ==================== 状态变量 ====================
-    /// @notice 治理合约地址
+    /// @notice 治理合约地址 - 有权启动和结束质疑期的合约
+    /// @dev 只有治理合约才能管理质疑会话的生命周期
     address public governanceContract;
 
-    /// @notice 资金管理合约地址
+    /// @notice 资金管理合约地址 - 负责处理质疑保证金的合约
+    /// @dev 质疑保证金需要通过资金管理合约进行冻结和释放
     address public fundManager;
 
-    /// @notice 投票管理合约地址
+    /// @notice 投票管理合约地址 - 用于验证被质疑的验证者信息
+    /// @dev 需要验证被质疑的验证者确实参与了相关案件的投票
     address public votingManager;
 
     /// @notice 案件质疑信息映射 caseId => DisputeSession
+    /// @dev 存储每个案件的完整质疑会话信息
     mapping(uint256 => DisputeSession) public disputeSessions;
 
     /// @notice 用户质疑历史记录 user => caseId => hasDisputed
+    /// @dev 记录用户的质疑参与历史，防止重复操作
     mapping(address => mapping(uint256 => bool)) public userDisputeHistory;
 
     /// @notice 验证者被质疑次数统计 validator => disputeCount
+    /// @dev 跟踪每个验证者被质疑的总次数，用于评估验证者表现
     mapping(address => uint256) public validatorDisputeCount;
 
     /// @notice 质疑成功率统计 challenger => successCount
+    /// @dev 记录每个质疑者成功质疑的次数，评估质疑质量
     mapping(address => uint256) public challengerSuccessCount;
 
     /// @notice 质疑参与次数统计 challenger => totalCount
+    /// @dev 记录每个质疑者的总参与次数，计算成功率使用
     mapping(address => uint256) public challengerTotalCount;
 
     // ==================== 结构体定义 ====================
@@ -43,37 +53,42 @@ contract DisputeManager is Ownable {
     /**
      * @notice 质疑会话结构体
      * @dev 记录单个案件的完整质疑信息
+     * 包含质疑期的时间管理、质疑统计和结果处理
      */
     struct DisputeSession {
-        uint256 caseId; // 案件ID
-        bool isActive; // 质疑期是否激活
-        bool isCompleted; // 质疑是否完成
-        uint256 startTime; // 质疑开始时间
-        uint256 endTime; // 质疑结束时间
-        uint256 totalChallenges; // 总质疑数量
-        bool resultChanged; // 结果是否改变
-        // 质疑信息数组
+        uint256 caseId; // 案件ID - 与此质疑会话关联的案件标识
+        bool isActive; // 质疑期是否激活 - 当前是否可以提交质疑
+        bool isCompleted; // 质疑是否完成 - 质疑流程是否已结束
+        uint256 startTime; // 质疑开始时间 - 质疑期开始的时间戳
+        uint256 endTime; // 质疑结束时间 - 质疑期截止的时间戳
+        uint256 totalChallenges; // 总质疑数量 - 收到的质疑总数
+        bool resultChanged; // 结果是否改变 - 质疑是否成功改变了投票结果
+        // 质疑信息数组 - 存储所有提交的质疑详情
         DataStructures.ChallengeInfo[] challenges;
         // 验证者质疑统计 validator => ChallengeStats
         mapping(address => ChallengeStats) validatorChallengeStats;
-        // 质疑者映射 challenger => true
+        // 质疑者映射 challenger => true - 快速查询某地址是否参与质疑
         mapping(address => bool) challengers;
     }
 
     /**
      * @notice 验证者质疑统计结构体
+     * @dev 统计针对特定验证者的质疑情况
+     * 包括支持和反对的质疑数量及质疑者列表
      */
     struct ChallengeStats {
-        uint256 supportCount; // 支持验证者的质疑数量
-        uint256 opposeCount; // 反对验证者的质疑数量
-        bool hasBeenChallenged; // 是否被质疑过
-        address[] challengers; // 质疑者列表
+        uint256 supportCount; // 支持验证者的质疑数量 - 认为验证者判断正确的质疑
+        uint256 opposeCount; // 反对验证者的质疑数量 - 认为验证者判断错误的质疑
+        bool hasBeenChallenged; // 是否被质疑过 - 该验证者是否收到过质疑
+        address[] challengers; // 质疑者列表 - 所有质疑该验证者的地址
     }
 
     // ==================== 修饰符 ====================
 
     /**
      * @notice 只有治理合约可以调用
+     * @dev 确保关键的质疑管理功能只能由授权的治理合约执行
+     * 防止未授权访问质疑会话管理功能
      */
     modifier onlyGovernance() {
         if (msg.sender != governanceContract) {
@@ -84,6 +99,8 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 检查质疑期是否激活
+     * @dev 确保质疑在正确的时间窗口内进行
+     * 验证质疑期是否开始且未超时
      */
     modifier disputeActive(uint256 caseId) {
         DisputeSession storage session = disputeSessions[caseId];
@@ -101,6 +118,8 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 检查地址是否为零地址
+     * @dev 防止将关键合约地址设置为零地址
+     * 避免系统功能失效和资金丢失
      */
     modifier notZeroAddress(address account) {
         if (account == address(0)) {
@@ -111,6 +130,11 @@ contract DisputeManager is Ownable {
 
     // ==================== 构造函数 ====================
 
+    /**
+     * @dev 初始化质疑管理合约
+     * 设置初始管理员，其他合约地址需要后续设置
+     * @param _admin 管理员地址
+     */
     constructor(address _admin) Ownable(_admin) {
     }
 
@@ -118,6 +142,8 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 开始质疑期
+     * @dev 为指定案件创建新的质疑会话
+     * 只能由治理合约调用，设置质疑期的时间限制
      * @param caseId 案件ID
      * @param challengeDuration 质疑持续时间（秒）
      */
@@ -125,23 +151,27 @@ contract DisputeManager is Ownable {
         uint256 caseId,
         uint256 challengeDuration
     ) external onlyGovernance {
+        // 防止为同一案件重复创建质疑会话
         if (disputeSessions[caseId].caseId != 0) {
             revert Errors.DuplicateOperation(address(0), "dispute session");
         }
 
+        // 验证质疑持续时间的合理性
         if (challengeDuration == 0) {
             revert Errors.InvalidAmount(challengeDuration, 1);
         }
 
+        // 创建并初始化质疑会话
         DisputeSession storage session = disputeSessions[caseId];
-        session.caseId = caseId;
-        session.isActive = true;
-        session.isCompleted = false;
-        session.startTime = block.timestamp;
-        session.endTime = block.timestamp + challengeDuration;
-        session.totalChallenges = 0;
-        session.resultChanged = false;
+        session.caseId = caseId; // 设置关联的案件ID
+        session.isActive = true; // 激活质疑期
+        session.isCompleted = false; // 标记为未完成
+        session.startTime = block.timestamp; // 设置质疑开始时间
+        session.endTime = block.timestamp + challengeDuration; // 计算质疑结束时间
+        session.totalChallenges = 0; // 初始化质疑计数
+        session.resultChanged = false; // 初始化结果变更标志
 
+        // 发出质疑期开始事件
         emit Events.ChallengePhaseStarted(
             caseId,
             session.endTime,
@@ -151,13 +181,13 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 提交质疑
+     * @dev 用户对特定验证者的投票决定提出质疑
+     * 需要提交质疑保证金和支持证据
      * @param caseId 案件ID
      * @param targetValidator 被质疑的验证者地址
      * @param choice 质疑选择（支持或反对验证者）
      * @param reason 质疑理由
-     * @param evidenceHashes 证据哈希数组
-     * @param evidenceTypes 证据类型数组
-     * @param evidenceDescriptions 证据描述数组
+     * @param evidenceHash 证据哈希
      * @param challengeDeposit 质疑保证金
      */
     function submitChallenge(
@@ -165,12 +195,10 @@ contract DisputeManager is Ownable {
         address targetValidator,
         DataStructures.ChallengeChoice choice,
         string calldata reason,
-        string[] calldata evidenceHashes,
-        string[] calldata evidenceTypes,
-        string[] calldata evidenceDescriptions,
+        string calldata evidenceHash,
         uint256 challengeDeposit
     ) external payable disputeActive(caseId) notZeroAddress(targetValidator) {
-        // 验证质疑保证金
+        // 验证质疑保证金金额与实际支付是否一致
         if (msg.value != challengeDeposit || challengeDeposit == 0) {
             revert Errors.InsufficientChallengeDeposit(
                 msg.value,
@@ -178,30 +206,24 @@ contract DisputeManager is Ownable {
             );
         }
 
-        // 检查是否质疑自己
+        // 检查是否尝试质疑自己，防止自我质疑的异常情况
         if (msg.sender == targetValidator) {
             revert Errors.CannotChallengeSelf(msg.sender);
         }
 
-        // 检查是否已经质疑过该验证者
+        // 检查是否已经质疑过该验证者，防止重复质疑
         if (_hasUserChallengedValidator(caseId, msg.sender, targetValidator)) {
             revert Errors.AlreadyChallenged(msg.sender, targetValidator);
         }
 
-        // 检查质疑理由是否为空
+        // 检查质疑理由是否为空，确保质疑有明确的依据
         if (bytes(reason).length == 0) {
             revert Errors.EmptyChallengeReason();
         }
 
-        // 验证证据数组长度一致
-        if (
-            evidenceHashes.length != evidenceTypes.length ||
-            evidenceTypes.length != evidenceDescriptions.length
-        ) {
-            revert Errors.InsufficientEvidence(
-                evidenceHashes.length,
-                evidenceTypes.length
-            );
+        // 验证证据哈希是否为空
+        if (bytes(evidenceHash).length == 0) {
+            revert Errors.EmptyEvidenceDescription();
         }
 
         // TODO: 验证目标验证者确实参与了该案件的投票
@@ -209,65 +231,49 @@ contract DisputeManager is Ownable {
 
         DisputeSession storage session = disputeSessions[caseId];
 
-        // 创建证据数组
-        DataStructures.Evidence[]
-        memory evidences = new DataStructures.Evidence[](
-            evidenceHashes.length
-        );
-        for (uint256 i = 0; i < evidenceHashes.length; i++) {
-            evidences[i] = DataStructures.Evidence({
-                description: evidenceDescriptions[i],
-                ipfsHash: evidenceHashes[i],
-                location: "", // 将在主合约中设置
-                timestamp: block.timestamp,
-                submitter: msg.sender,
-                evidenceType: evidenceTypes[i]
-            });
-        }
-
-        // 创建质疑信息
+        // 创建完整的质疑信息结构体
         DataStructures.ChallengeInfo memory challengeInfo = DataStructures
             .ChallengeInfo({
-            challenger: msg.sender,
-            targetValidator: targetValidator,
-            choice: choice,
-            reason: reason,
-            evidences: evidences,
-            timestamp: block.timestamp,
-            challengeDeposit: challengeDeposit
+            challenger: msg.sender, // 质疑者地址
+            targetValidator: targetValidator, // 被质疑的验证者
+            choice: choice, // 质疑选择（支持或反对）
+            reason: reason, // 质疑理由
+            evidenceHash: evidenceHash, // 支持证据哈希
+            timestamp: block.timestamp, // 质疑时间
+            challengeDeposit: challengeDeposit // 质疑保证金
         });
 
-        // 添加质疑到会话
+        // 将质疑添加到会话中
         session.challenges.push(challengeInfo);
-        session.totalChallenges++;
-        session.challengers[msg.sender] = true;
+        session.totalChallenges++; // 增加质疑计数
+        session.challengers[msg.sender] = true; // 标记用户已参与质疑
 
-        // 更新验证者质疑统计
+        // 更新针对目标验证者的质疑统计
         ChallengeStats storage stats = session.validatorChallengeStats[
                     targetValidator
             ];
         if (!stats.hasBeenChallenged) {
-            stats.hasBeenChallenged = true;
+            stats.hasBeenChallenged = true; // 标记验证者已被质疑
         }
 
-        stats.challengers.push(msg.sender);
+        stats.challengers.push(msg.sender); // 添加到质疑者列表
 
+        // 根据质疑选择更新相应的计数
         if (choice == DataStructures.ChallengeChoice.SUPPORT_VALIDATOR) {
-            stats.supportCount++;
+            stats.supportCount++; // 支持验证者的质疑数量
         } else {
-            stats.opposeCount++;
+            stats.opposeCount++; // 反对验证者的质疑数量
         }
 
-        // 更新用户质疑历史
-        userDisputeHistory[msg.sender][caseId] = true;
-
-        // 更新统计数据
-        validatorDisputeCount[targetValidator]++;
-        challengerTotalCount[msg.sender]++;
+        // 更新全局统计数据
+        userDisputeHistory[msg.sender][caseId] = true; // 记录用户质疑历史
+        validatorDisputeCount[targetValidator]++; // 增加验证者被质疑次数
+        challengerTotalCount[msg.sender]++; // 增加质疑者参与次数
 
         // TODO: 调用资金管理合约冻结质疑保证金
         // 这需要将ETH转发给FundManager合约
 
+        // 发出质疑提交事件
         emit Events.ChallengeSubmitted(
             caseId,
             msg.sender,
@@ -281,6 +287,8 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 结束质疑期并处理结果
+     * @dev 计算质疑结果，决定是否改变原始投票结论
+     * 只能在质疑期结束后由治理合约调用
      * @param caseId 案件ID
      * @param originalResult 原始投票结果
      * @return finalResult 最终结果
@@ -292,37 +300,42 @@ contract DisputeManager is Ownable {
     ) external onlyGovernance returns (bool finalResult, bool resultChanged) {
         DisputeSession storage session = disputeSessions[caseId];
 
+        // 检查质疑会话是否处于活跃状态
         if (!session.isActive) {
             revert Errors.InvalidCaseStatus(caseId, 0, 1);
         }
 
+        // 检查是否已达到质疑期截止时间
         if (block.timestamp < session.endTime) {
             revert Errors.OperationTooEarly(block.timestamp, session.endTime);
         }
 
-        // 如果没有质疑，结果保持不变
+        // 如果没有收到任何质疑，结果保持不变
         if (session.totalChallenges == 0) {
-            session.isActive = false;
-            session.isCompleted = true;
+            session.isActive = false; // 停用质疑会话
+            session.isCompleted = true; // 标记为已完成
 
+            // 发出质疑期结束事件
             emit Events.ChallengePhaseEnded(caseId, 0, false, block.timestamp);
 
             return (originalResult, false);
         }
 
-        // 计算质疑结果
+        // 根据质疑情况计算最终结果
         (finalResult, resultChanged) = _calculateDisputeResult(
             caseId,
             originalResult
         );
 
-        session.isActive = false;
-        session.isCompleted = true;
-        session.resultChanged = resultChanged;
+        // 更新会话状态
+        session.isActive = false; // 停用质疑会话
+        session.isCompleted = true; // 标记为已完成
+        session.resultChanged = resultChanged; // 记录结果是否改变
 
-        // 处理质疑者的诚信状态和奖惩
+        // 处理质疑者的奖惩和统计更新
         _processDisputeRewards(caseId, resultChanged);
 
+        // 发出质疑期结束事件
         emit Events.ChallengePhaseEnded(
             caseId,
             session.totalChallenges,
@@ -337,6 +350,8 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 检查用户是否已经质疑过特定验证者
+     * @dev 内部函数，防止用户重复质疑同一验证者
+     * 遍历已有质疑记录进行检查
      * @param caseId 案件ID
      * @param challenger 质疑者地址
      * @param targetValidator 目标验证者地址
@@ -349,10 +364,12 @@ contract DisputeManager is Ownable {
     ) internal view returns (bool) {
         DisputeSession storage session = disputeSessions[caseId];
 
+        // 遍历所有质疑记录
         for (uint256 i = 0; i < session.challenges.length; i++) {
             DataStructures.ChallengeInfo storage challenge = session.challenges[
                         i
                 ];
+            // 检查是否存在相同质疑者对相同验证者的质疑
             if (
                 challenge.challenger == challenger &&
                 challenge.targetValidator == targetValidator
@@ -366,6 +383,8 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 计算质疑结果
+     * @dev 内部函数，根据质疑统计决定最终结果
+     * 使用简单多数规则：反对验证者的质疑占多数则改变结果
      * @param caseId 案件ID
      * @param originalResult 原始投票结果
      * @return finalResult 最终结果
@@ -380,7 +399,7 @@ contract DisputeManager is Ownable {
         uint256 totalSupportValidators = 0; // 支持验证者的质疑总数
         uint256 totalOpposeValidators = 0; // 反对验证者的质疑总数
 
-        // 统计所有质疑
+        // 统计所有质疑的倾向
         for (uint256 i = 0; i < session.challenges.length; i++) {
             DataStructures.ChallengeInfo storage challenge = session.challenges[
                         i
@@ -390,19 +409,19 @@ contract DisputeManager is Ownable {
                 challenge.choice ==
                 DataStructures.ChallengeChoice.SUPPORT_VALIDATOR
             ) {
-                totalSupportValidators++;
+                totalSupportValidators++; // 支持验证者判断的质疑
             } else {
-                totalOpposeValidators++;
+                totalOpposeValidators++; // 反对验证者判断的质疑
             }
         }
 
-        // 如果反对验证者的质疑占多数，则结果取反
+        // 如果反对验证者的质疑占多数，则推翻原始结果
         if (totalOpposeValidators > totalSupportValidators) {
-            finalResult = !originalResult;
-            resultChanged = true;
+            finalResult = !originalResult; // 结果取反
+            resultChanged = true; // 标记结果已改变
         } else {
-            finalResult = originalResult;
-            resultChanged = false;
+            finalResult = originalResult; // 保持原始结果
+            resultChanged = false; // 结果未改变
         }
 
         return (finalResult, resultChanged);
@@ -410,6 +429,8 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 处理质疑奖励和惩罚
+     * @dev 内部函数，根据质疑结果更新质疑者的成功统计
+     * 成功的质疑者将获得奖励，失败的质疑者可能面临惩罚
      * @param caseId 案件ID
      * @param resultChanged 结果是否改变
      */
@@ -419,6 +440,7 @@ contract DisputeManager is Ownable {
     ) internal {
         DisputeSession storage session = disputeSessions[caseId];
 
+        // 遍历所有质疑，判断每个质疑的成功与否
         for (uint256 i = 0; i < session.challenges.length; i++) {
             DataStructures.ChallengeInfo storage challenge = session.challenges[
                         i
@@ -428,19 +450,21 @@ contract DisputeManager is Ownable {
 
             // 判断质疑是否成功
             if (resultChanged) {
-                // 如果结果改变了，反对验证者的质疑成功
+                // 如果结果改变了，说明反对验证者的质疑成功
                 challengeSuccessful = (challenge.choice ==
                     DataStructures.ChallengeChoice.OPPOSE_VALIDATOR);
             } else {
-                // 如果结果没改变，支持验证者的质疑成功
+                // 如果结果没改变，说明支持验证者的质疑成功
                 challengeSuccessful = (challenge.choice ==
                     DataStructures.ChallengeChoice.SUPPORT_VALIDATOR);
             }
 
+            // 更新成功质疑者的统计
             if (challengeSuccessful) {
                 challengerSuccessCount[challenge.challenger]++;
             }
 
+            // 发出质疑结果处理事件
             emit Events.ChallengeResultProcessed(
                 caseId,
                 challenge.challenger,
@@ -455,8 +479,10 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 获取质疑会话信息
+     * @dev 公开查询函数，返回质疑会话的基本信息
+     * 供前端和其他合约查询质疑状态
      * @param caseId 案件ID
-     * @return 质疑会话基本信息
+     * @return 质疑会话的各项基本信息
      */
     function getDisputeSessionInfo(
         uint256 caseId
@@ -464,13 +490,13 @@ contract DisputeManager is Ownable {
     external
     view
     returns (
-        uint256, // caseId
-        bool, // isActive
-        bool, // isCompleted
-        uint256, // startTime
-        uint256, // endTime
-        uint256, // totalChallenges
-        bool // resultChanged
+        uint256, // caseId - 案件ID
+        bool, // isActive - 是否活跃
+        bool, // isCompleted - 是否完成
+        uint256, // startTime - 开始时间
+        uint256, // endTime - 结束时间
+        uint256, // totalChallenges - 总质疑数
+        bool // resultChanged - 结果是否改变
     )
     {
         DisputeSession storage session = disputeSessions[caseId];
@@ -488,6 +514,7 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 获取特定质疑信息
+     * @dev 查询指定索引的质疑详细信息
      * @param caseId 案件ID
      * @param challengeIndex 质疑索引
      * @return 质疑详细信息
@@ -498,6 +525,7 @@ contract DisputeManager is Ownable {
     ) external view returns (DataStructures.ChallengeInfo memory) {
         DisputeSession storage session = disputeSessions[caseId];
 
+        // 验证索引的有效性
         if (challengeIndex >= session.challenges.length) {
             revert Errors.InvalidAmount(
                 challengeIndex,
@@ -510,6 +538,7 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 获取验证者质疑统计
+     * @dev 查询特定验证者在特定案件中的被质疑情况
      * @param caseId 案件ID
      * @param validator 验证者地址
      * @return 质疑统计信息
@@ -521,10 +550,10 @@ contract DisputeManager is Ownable {
     external
     view
     returns (
-        uint256, // supportCount
-        uint256, // opposeCount
-        bool, // hasBeenChallenged
-        address[] memory // challengers
+        uint256, // supportCount - 支持票数
+        uint256, // opposeCount - 反对票数
+        bool, // hasBeenChallenged - 是否被质疑
+        address[] memory // challengers - 质疑者列表
     )
     {
         ChallengeStats storage stats = disputeSessions[caseId]
@@ -540,6 +569,7 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 获取质疑者统计信息
+     * @dev 查询质疑者的历史表现和成功率
      * @param challenger 质疑者地址
      * @return successCount 成功次数
      * @return totalCount 总参与次数
@@ -554,6 +584,7 @@ contract DisputeManager is Ownable {
     {
         successCount = challengerSuccessCount[challenger];
         totalCount = challengerTotalCount[challenger];
+        // 计算成功率，避免除零错误
         successRate = totalCount > 0 ? (successCount * 100) / totalCount : 0;
 
         return (successCount, totalCount, successRate);
@@ -561,6 +592,7 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 检查用户是否参与了某案件的质疑
+     * @dev 快速查询用户的质疑参与历史
      * @param user 用户地址
      * @param caseId 案件ID
      * @return 是否参与了质疑
@@ -574,6 +606,7 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 获取案件的所有质疑
+     * @dev 返回指定案件的完整质疑信息列表
      * @param caseId 案件ID
      * @return 质疑信息数组
      */
@@ -587,6 +620,8 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 设置治理合约地址
+     * @dev 设置有权管理质疑会话的治理合约地址
+     * 只有合约所有者可以调用
      * @param _governanceContract 治理合约地址
      */
     function setGovernanceContract(
@@ -597,6 +632,7 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 设置资金管理合约地址
+     * @dev 设置负责处理质疑保证金的资金管理合约地址
      * @param _fundManager 资金管理合约地址
      */
     function setFundManager(
@@ -607,6 +643,7 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 设置投票管理合约地址
+     * @dev 设置用于验证验证者信息的投票管理合约地址
      * @param _votingManager 投票管理合约地址
      */
     function setVotingManager(
@@ -617,17 +654,22 @@ contract DisputeManager is Ownable {
 
     /**
      * @notice 紧急暂停质疑会话
+     * @dev 在紧急情况下暂停正在进行的质疑会话
+     * 只有合约所有者可以调用，用于处理异常情况
      * @param caseId 案件ID
      */
     function emergencyPauseDispute(uint256 caseId) external onlyOwner {
         DisputeSession storage session = disputeSessions[caseId];
 
+        // 检查质疑会话是否处于活跃状态
         if (!session.isActive) {
             revert Errors.InvalidCaseStatus(caseId, 0, 1);
         }
 
+        // 停用质疑会话
         session.isActive = false;
 
+        // 发出紧急暂停事件
         emit Events.EmergencyTriggered(
             caseId,
             "Dispute Paused",

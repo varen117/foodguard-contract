@@ -203,23 +203,21 @@ contract DeployFoodSafetyGovernance is Script {
         console.log("Medium Risk Multiplier:", dynamicConfig.mediumRiskMultiplier, "%");
         console.log("Low Risk Multiplier:", dynamicConfig.lowRiskMultiplier, "%");
 
-        console.log("\n=== Mutual Pool Status ===");
-        DataStructures.MutualGuaranteePool memory poolStatus = fundManager.getMutualPoolStatus();
-        console.log("Pool Active:", poolStatus.isActive);
+        console.log("\n=== Fund Pool Status ===");
+        DataStructures.FundPool memory poolStatus = fundManager.getFundPool();
         console.log("Total Balance:", poolStatus.totalBalance);
-        console.log("Active Members:", poolStatus.activeMembers);
+        console.log("Reward Pool:", poolStatus.rewardPool);
+        console.log("Operational Fund:", poolStatus.operationalFund);
 
         console.log("\n=== Next Steps ===");
         console.log("1. Register users with: governance.registerUser{value: 0.05 ether}()");
         console.log("2. Register enterprises with: governance.registerEnterprise{value: 1 ether}()");
-        console.log("3. Join mutual pool with: fundManager.joinMutualPool{value: 0.1 ether}(0.1 ether)");
-        console.log("4. Create complaints and test dynamic deposit management");
-        console.log("5. Monitor user deposit status with: fundManager.getUserDepositStatus(user)");
+        console.log("3. Create complaints and test dynamic deposit management");
+        console.log("4. Monitor user deposit status with: fundManager.getUserDepositStatus(user)");
         console.log("\n=== Advanced Features ===");
         console.log("- Dynamic deposit calculation based on risk level and reputation");
         console.log("- Automatic status management (Warning -> Restriction -> Liquidation)");
-        console.log("- Mutual guarantee pool for deposit assistance");
-        console.log("- Smart freeze with automatic mutual pool usage");
+        console.log("- Simple and direct deposit freeze mechanism");
         console.log("- Reputation-based deposit discounts/penalties");
 
         console.log("\n=== Management Functions ===");
@@ -231,11 +229,11 @@ contract DeployFoodSafetyGovernance is Script {
         console.log("\n=== Deployment Summary ===");
         console.log("[SUCCESS] All contracts deployed successfully");
         console.log("[SUCCESS] Dynamic deposit management enabled");
-        console.log("[SUCCESS] Mutual guarantee pool initialized");
-        console.log("[SUCCESS] Smart liquidation system active");
+        console.log("[SUCCESS] Simple deposit freeze mechanism active");
+        console.log("[SUCCESS] Liquidation system active");
         console.log("[SUCCESS] Reputation-based discounts configured");
 
-        console.log("\nFood Safety Governance with Dynamic Deposits is ready!");
+        console.log("\nFood Safety Governance with Simple Dynamic Deposits is ready!");
     }
 
     // ==================== 辅助部署函数 ====================

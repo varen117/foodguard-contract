@@ -180,9 +180,7 @@ contract FoodSafetyGovernanceTest is Test {
         string memory location = "Restaurant ABC, Beijing";
         uint256 incidentTime = block.timestamp - 1;
         
-        string[] memory evidenceHashes = new string[](2);
-        evidenceHashes[0] = "QmXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxX";
-        evidenceHashes[1] = "QmYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYyYy";
+        string memory evidenceHash = "QmXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxX";
         
         // 创建投诉
         vm.prank(complainant);
@@ -192,7 +190,7 @@ contract FoodSafetyGovernanceTest is Test {
             description,
             location,
             incidentTime,
-            evidenceHashes,
+            evidenceHash,
             uint8(DataStructures.RiskLevel.LOW)
         );
         
@@ -224,8 +222,7 @@ contract FoodSafetyGovernanceTest is Test {
         address unregisteredUser = makeAddr("unregistered");
         vm.deal(unregisteredUser, 1 ether);
         
-        string[] memory evidenceHashes = new string[](1);
-        evidenceHashes[0] = "QmXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxX";
+        string memory evidenceHash = "QmXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxXxX";
         
         vm.prank(unregisteredUser);
         vm.expectRevert();
@@ -235,7 +232,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Test Description",
             "Test Location",
             block.timestamp - 1,
-            evidenceHashes,
+            evidenceHash,
             uint8(DataStructures.RiskLevel.LOW)
         );
         
@@ -248,7 +245,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Test Description",
             "Test Location",
             block.timestamp - 1,
-            evidenceHashes,
+            evidenceHash,
             uint8(DataStructures.RiskLevel.LOW)
         );
         
@@ -304,8 +301,7 @@ contract FoodSafetyGovernanceTest is Test {
      * @notice 创建测试投诉
      */
     function _createTestComplaint() internal returns (uint256 caseId) {
-        string[] memory evidenceHashes = new string[](1);
-        evidenceHashes[0] = "QmTestHash";
+        string memory evidenceHash = "QmTestHash";
         
         vm.prank(complainant);
         caseId = governance.createComplaint{value: MIN_COMPLAINT_DEPOSIT}(
@@ -314,7 +310,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Detailed description of food safety problem",
             "Test Restaurant",
             block.timestamp - 1,
-            evidenceHashes,
+            evidenceHash,
             uint8(DataStructures.RiskLevel.LOW)
         );
         
@@ -412,8 +408,7 @@ contract FoodSafetyGovernanceTest is Test {
         vm.prank(complainant);
         governance.registerUser{value: MIN_COMPLAINT_DEPOSIT}();
         
-        string[] memory evidences = new string[](1);
-        evidences[0] = "test";
+        string memory evidenceHash = "test";
         
         vm.prank(complainant);
         vm.expectRevert();
@@ -423,7 +418,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Test",
             "Test",
             block.timestamp - 1,
-            evidences,
+            evidenceHash,
             uint8(DataStructures.RiskLevel.LOW)
         );
         
@@ -501,8 +496,7 @@ contract FoodSafetyGovernanceTest is Test {
         console.log("Enterprise balance:", enterpriseBalance);
         
         // 3. 准备投诉数据
-        string[] memory evidenceHashes = new string[](1);
-        evidenceHashes[0] = "QmTestHash";
+        string memory evidenceHash = "QmTestHash";
         
         console.log("Evidence prepared");
         
@@ -514,7 +508,7 @@ contract FoodSafetyGovernanceTest is Test {
             "Detailed description of food safety problem",
             "Test Restaurant",
             block.timestamp - 1,
-            evidenceHashes,
+            evidenceHash,
             uint8(DataStructures.RiskLevel.LOW)
         );
         
@@ -532,9 +526,8 @@ contract FoodSafetyGovernanceTest is Test {
         vm.prank(enterprise);
         governance.registerEnterprise{value: MIN_ENTERPRISE_DEPOSIT}();
         
-        // 2. 创建最简单的证据数组
-        string[] memory evidenceHashes = new string[](1);
-        evidenceHashes[0] = "a";
+        // 2. 创建最简单的证据哈希
+        string memory evidenceHash = "a";
         
         // 3. 创建投诉
         vm.prank(complainant);
@@ -544,7 +537,7 @@ contract FoodSafetyGovernanceTest is Test {
             "description",
             "location",
             1,
-            evidenceHashes,
+            evidenceHash,
             uint8(DataStructures.RiskLevel.LOW)
         );
         
