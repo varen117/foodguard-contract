@@ -249,9 +249,7 @@ contract DisputeManager is Ownable {
         session.challengers[msg.sender] = true; // 标记用户已参与质疑
 
         // 更新针对目标验证者的质疑统计
-        ChallengeStats storage stats = session.validatorChallengeStats[
-                    targetValidator
-            ];
+        ChallengeStats storage stats = session.validatorChallengeStats[targetValidator];
         if (!stats.hasBeenChallenged) {
             stats.hasBeenChallenged = true; // 标记验证者已被质疑
         }
@@ -366,9 +364,7 @@ contract DisputeManager is Ownable {
 
         // 遍历所有质疑记录
         for (uint256 i = 0; i < session.challenges.length; i++) {
-            DataStructures.ChallengeInfo storage challenge = session.challenges[
-                        i
-                ];
+            DataStructures.ChallengeInfo storage challenge = session.challenges[i];
             // 检查是否存在相同质疑者对相同验证者的质疑
             if (
                 challenge.challenger == challenger &&
@@ -401,13 +397,10 @@ contract DisputeManager is Ownable {
 
         // 统计所有质疑的倾向
         for (uint256 i = 0; i < session.challenges.length; i++) {
-            DataStructures.ChallengeInfo storage challenge = session.challenges[
-                        i
-                ];
+            DataStructures.ChallengeInfo storage challenge = session.challenges[i];
 
             if (
-                challenge.choice ==
-                DataStructures.ChallengeChoice.SUPPORT_VALIDATOR
+                challenge.choice == DataStructures.ChallengeChoice.SUPPORT_VALIDATOR
             ) {
                 totalSupportValidators++; // 支持验证者判断的质疑
             } else {

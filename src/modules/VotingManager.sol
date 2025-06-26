@@ -304,10 +304,10 @@ contract VotingManager is Ownable {
     ) external caseExists(caseId) votingActive(caseId) {
         // 验证投票提交的有效性
         _validateVoteSubmission(caseId, reason, evidenceHash);
-        
+
         // 记录投票内容和证据
         _recordVoteAndEvidence(caseId, choice, reason, evidenceHash);
-        
+
         // 更新投票统计数据
         _updateVotingStatistics(caseId, choice);
 
@@ -412,7 +412,6 @@ contract VotingManager is Ownable {
     external
     onlyGovernance
     caseExists(caseId)
-    returns (bool complaintUpheld)
     {
         VotingSession storage session = votingSessions[caseId];
 
@@ -426,35 +425,9 @@ contract VotingManager is Ownable {
             revert Errors.OperationTooEarly(block.timestamp, session.endTime);
         }
 
-        // 计算投票结果：支持票数大于反对票数则投诉成立
-        complaintUpheld = session.supportVotes > session.rejectVotes;
-
         // 更新会话状态
         session.isActive = false; // 停用投票会话
         session.isCompleted = true; // 标记为已完成
-        session.complaintUpheld = complaintUpheld; // 记录最终结果
-
-        // 更新验证者成功验证次数（假设多数意见为正确）
-        for (uint256 i = 0; i < session.selectedValidators.length; i++) {
-            address validator = session.selectedValidators[i];
-            DataStructures.VoteInfo storage vote = session.votes[validator];
-
-            // 只统计已投票的验证者
-            if (vote.hasVoted) {
-                // 判断是否投票与多数意见一致
-                bool votedWithMajority = (complaintUpheld &&
-                    vote.choice ==
-                    DataStructures.VoteChoice.SUPPORT_COMPLAINT) ||
-                    (!complaintUpheld &&
-                    vote.choice ==
-                    DataStructures.VoteChoice.REJECT_COMPLAINT);
-
-                // 增加与多数意见一致的验证者的成功次数
-                if (votedWithMajority) {
-                    validators[validator].successfulValidations++;
-                }
-            }
-        }
 
         // 发出投票期结束事件
         emit Events.VotingPhaseEnded(
@@ -464,7 +437,6 @@ contract VotingManager is Ownable {
             block.timestamp
         );
 
-        return complaintUpheld;
     }
 
     // ==================== 内部函数 ====================

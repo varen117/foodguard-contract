@@ -78,7 +78,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
 
     /**
      * @notice 案件信息结构体（主要状态信息）
-     * @dev 精简版案件信息，避免栈深度过深
      */
     struct CaseInfo {
         uint256 caseId; // 案件ID
@@ -524,7 +523,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         );
     }
 
-    //todo  没有投票环节
 
     /**
      * @notice 步骤4: 结束投票并开始质疑期
@@ -538,16 +536,21 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     caseExists(caseId)
     inStatus(caseId, DataStructures.CaseStatus.VOTING)
     {
-        // 结束投票会话
-        bool votingResult = votingManager.endVotingSession(caseId);
+        // 结束验证阶段
+        votingManager.endVotingSession(caseId);
 
         CaseInfo storage caseInfo = cases[caseId];
-        caseInfo.complaintUpheld = votingResult;
+        //todo 质疑完成后执行这些状态改变
+//        caseInfo.complaintUpheld = votingResult;
+        // 计算投票结果：支持票数大于反对票数则投诉成立
+//        complaintUpheld = session.supportVotes > session.rejectVotes;
+//        session.complaintUpheld = complaintUpheld; // 记录最终结果
+//        validators[validator].successfulValidations++;
+        // 开启质疑阶段
         caseInfo.status = DataStructures.CaseStatus.CHALLENGING;
 
         // 开始质疑期
-        DataStructures.SystemConfig memory config = fundManager
-            .getSystemConfig();
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
         disputeManager.startDisputeSession(caseId, config.challengePeriod);
 
         emit Events.CaseStatusUpdated(
