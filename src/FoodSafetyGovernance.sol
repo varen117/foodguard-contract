@@ -536,16 +536,12 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     caseExists(caseId)
     inStatus(caseId, DataStructures.CaseStatus.VOTING)
     {
-        // 结束验证阶段
-        votingManager.endVotingSession(caseId);
+        // 结束验证阶段并获取投票结果
+        (bool complaintUpheld, , ) = votingManager.endVotingSession(caseId);
 
         CaseInfo storage caseInfo = cases[caseId];
-        //todo 质疑完成后执行这些状态改变
-//        caseInfo.complaintUpheld = votingResult;
-        // 计算投票结果：支持票数大于反对票数则投诉成立
-//        complaintUpheld = session.supportVotes > session.rejectVotes;
-//        session.complaintUpheld = complaintUpheld; // 记录最终结果
-//        validators[validator].successfulValidations++;
+        caseInfo.complaintUpheld = complaintUpheld; // 记录投票结果
+
         // 开启质疑阶段
         caseInfo.status = DataStructures.CaseStatus.CHALLENGING;
 
@@ -576,9 +572,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     {
         CaseInfo storage caseInfo = cases[caseId];
 
-        // 结束质疑期
-        (bool finalResult, ) = disputeManager
-            .endDisputeSession(caseId, caseInfo.complaintUpheld);
+        // 结束质疑期并获取质疑者详细信息
+        (bool finalResult, , , ) = disputeManager.endDisputeSession(caseId);
 
         // 更新最终结果
         caseInfo.complaintUpheld = finalResult;
@@ -602,9 +597,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * 处理流程：
      * 1. 收集所有验证者的投票信息和选择
      * 2. 收集所有质疑者的质疑信息和结果
-     * 3. 分析质疑是否成功改变了投票结果
-     * 4. 调用奖惩管理器进行复杂的奖惩计算
-     * 5. 自动完成案件处理
+     * 3. 调用奖惩管理器进行复杂的奖惩计算
+     * 4. 自动完成案件处理
      *
      * 奖惩分配原则：
      * - 验证者：投票正确获得奖励，错误承担惩罚
@@ -617,43 +611,63 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     function _processRewardsPunishments(uint256 caseId) internal {
         CaseInfo storage caseInfo = cases[caseId];
 
-        // 步骤1：获取投票信息
-        // 从投票管理器获取所有参与投票的验证者地址
-        (, address[] memory validators, , , , , , , ,) = votingManager
-            .getVotingSessionInfo(caseId);
+        // 步骤1：获取投票结果信息
+        (
+            uint256 caseIdVoting,
+            address[] memory validators,
+            uint256 supportVotes,
+            uint256 rejectVotes,
+            uint256 totalVotes,
+            uint256 startTime,
+            uint256 endTime,
+            bool isActive,
+            bool isCompleted,
+            bool complaintUpheld
+        ) = votingManager.getVotingSessionInfo(caseId);
 
         // 步骤2：构建验证者投票选择数组
-        // 收集每个验证者的具体投票选择，用于奖惩计算
-        DataStructures.VoteChoice[]
-        memory validatorChoices = new DataStructures.VoteChoice[](
-            validators.length
-        );
+        DataStructures.VoteChoice[] memory validatorChoices = new DataStructures.VoteChoice[](validators.length);
         for (uint256 i = 0; i < validators.length; i++) {
-            DataStructures.VoteInfo memory vote = votingManager
-                .getValidatorVote(caseId, validators[i]);
-            validatorChoices[i] = vote.choice; // SUPPORT_COMPLAINT 或 REJECT_COMPLAINT
+            DataStructures.VoteInfo memory vote = votingManager.getValidatorVote(caseId, validators[i]);
+            if (vote.hasVoted) {
+                validatorChoices[i] = vote.choice;
+            } else {
+                // 未投票视为反对投诉
+                validatorChoices[i] = DataStructures.VoteChoice.REJECT_COMPLAINT;
+            }
         }
 
         // 步骤3：获取质疑者信息
-        // 从质疑管理器获取所有质疑信息
-        DataStructures.ChallengeInfo[] memory challenges = disputeManager
-            .getAllChallenges(caseId);
+        DataStructures.ChallengeInfo[] memory challenges = disputeManager.getAllChallenges(caseId);
         address[] memory challengers = new address[](challenges.length);
         bool[] memory challengeResults = new bool[](challenges.length);
+
+        // 获取质疑会话信息以确定结果是否改变
+        (
+            uint256 caseIdDispute,
+            bool disputeIsActive,
+            bool disputeIsCompleted,
+            uint256 disputeStartTime,
+            uint256 disputeEndTime,
+            uint256 totalChallenges,
+            bool resultChanged
+        ) = disputeManager.getDisputeSessionInfo(caseId);
 
         // 步骤4：分析质疑结果
         for (uint256 i = 0; i < challenges.length; i++) {
             challengers[i] = challenges[i].challenger;
-            // 质疑成功判断逻辑：
-            // 如果质疑者选择OPPOSE_VALIDATOR且最终结果与投票结果不同，则质疑成功
-            challengeResults[i] =
-                (challenges[i].choice ==
-                    DataStructures.ChallengeChoice.OPPOSE_VALIDATOR) ==
-                (!caseInfo.complaintUpheld); // 如果反对验证者且结果确实改变了
+
+            // 判断质疑是否成功
+            if (resultChanged) {
+                // 如果结果改变了，说明反对验证者的质疑成功
+                challengeResults[i] = (challenges[i].choice == DataStructures.ChallengeChoice.OPPOSE_VALIDATOR);
+            } else {
+                // 如果结果没改变，说明支持验证者的质疑成功
+                challengeResults[i] = (challenges[i].choice == DataStructures.ChallengeChoice.SUPPORT_VALIDATOR);
+            }
         }
 
         // 步骤5：调用奖惩管理器进行综合计算
-        // 将所有参与者信息和结果传递给专门的奖惩管理器
         rewardManager.processCaseRewardPunishment(
             caseId,
             caseInfo.complaintUpheld, // 最终的案件结果
@@ -667,7 +681,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         );
 
         // 步骤6：完成案件处理
-        // 奖惩分配完成后，案件进入最终完成阶段
         _completeCase(caseId);
     }
 

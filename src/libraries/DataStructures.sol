@@ -99,6 +99,10 @@ library DataStructures {
         string reason; // 投票理由（投票依据和逻辑说明）
         string evidenceHash; // 投票相关证据哈希（支持投票决定的证据材料IPFS哈希）
         bool hasVoted; // 是否已投票（防止重复投票）
+        uint256 SupportersNumber; // 支持者数量（支持该投票的质疑者数量）
+        uint256 OpponentsNumber; // 反对者数量（反对该投票的质疑者数量）
+        address[] supporters; // 支持者列表（支持该投票的质疑者地址）
+        address[] opponents; // 反对者列表（反对该投票的质疑者地址）
     }
 
     /**
@@ -147,39 +151,39 @@ library DataStructures {
         string location; // 事发地点（问题发生的具体位置）
         uint256 incidentTime; // 事发时间（问题发生的时间）
         uint256 complaintTime; // 投诉时间（投诉提交的时间）
-        
+
         // ============ 状态和风险评估部分 ============
         CaseStatus status; // 案件状态（当前处于哪个处理阶段）
         RiskLevel riskLevel; // 风险等级（根据问题严重程度分级）
-        
+
         // ============ 保证金管理部分 ============
         uint256 complainantDeposit; // 投诉者保证金（投诉方需要锁定的保证金）
         uint256 enterpriseDeposit; // 企业保证金（企业方需要锁定的保证金）
         bool depositsLocked; // 保证金是否已锁定（确保双方都已提交保证金）
-        
+
         // ============ 证据材料部分 ============
         string complainantEvidenceHash; // 投诉者证据哈希（投诉方提供的证据材料IPFS哈希）
-        
+
         // ============ 验证投票部分 ============
         address[] validators; // 参与验证的地址列表（所有参与投票的验证者）
         mapping(address => VoteInfo) votes; // 投票映射（每个验证者的投票详情）
         uint256 supportVotes; // 支持投诉的票数（认为投诉成立的投票数）
         uint256 rejectVotes; // 反对投诉的票数（认为投诉不成立的投票数）
         uint256 votingDeadline; // 投票截止时间（投票阶段的时间限制）
-        
+
         // ============ 质疑处理部分 ============
         ChallengeInfo[] challenges; // 质疑信息列表（所有对投票结果的质疑）
         mapping(address => bool) hasChallenged; // 是否已质疑映射（防止重复质疑）
         uint256 challengeDeadline; // 质疑截止时间（质疑阶段的时间限制）
         bool challengePhaseActive; // 质疑阶段是否激活（当前是否允许质疑）
-        
+
         // ============ 结果和奖惩部分 ============
         bool complaintUpheld; // 投诉是否成立（最终的判决结果）
         uint256 totalRewardAmount; // 总奖励金额（分配给正确参与者的总奖励）
         uint256 totalPunishmentAmount; // 总惩罚金额（对错误参与者的总惩罚）
         mapping(address => uint256) individualRewards; // 个人奖励映射（每个人获得的具体奖励）
         mapping(address => uint256) individualPunishments; // 个人惩罚映射（每个人受到的具体惩罚）
-        
+
         // ============ 元数据部分 ============
         bool isCompleted; // 是否已完成（案件是否处理完毕）
         uint256 completionTime; // 完成时间（案件结束的时间）

@@ -405,6 +405,8 @@ contract VotingManager is Ownable {
      * 只能在投票期结束后调用
      * @param caseId 案件ID
      * @return complaintUpheld 投诉是否成立
+     * @return validatorAddresses 验证者地址数组
+     * @return validatorChoices 验证者投票选择数组
      */
     function endVotingSession(
         uint256 caseId
@@ -412,6 +414,11 @@ contract VotingManager is Ownable {
     external
     onlyGovernance
     caseExists(caseId)
+    returns (
+        bool complaintUpheld,
+        address[] memory validatorAddresses,
+        DataStructures.VoteChoice[] memory validatorChoices
+    )
     {
         VotingSession storage session = votingSessions[caseId];
 
@@ -423,6 +430,39 @@ contract VotingManager is Ownable {
         // 检查是否已达到投票截止时间
         if (block.timestamp < session.endTime) {
             revert Errors.OperationTooEarly(block.timestamp, session.endTime);
+        }
+
+        // 计算投票结果：支持票数大于反对票数则投诉成立
+        complaintUpheld = session.supportVotes > session.rejectVotes;
+        session.complaintUpheld = complaintUpheld; // 记录最终结果
+
+        // 准备返回验证者投票信息
+        validatorAddresses = new address[](session.selectedValidators.length);
+        validatorChoices = new DataStructures.VoteChoice[](session.selectedValidators.length);
+
+        // 收集所有验证者的投票选择
+        for (uint256 i = 0; i < session.selectedValidators.length; i++) {
+            address validator = session.selectedValidators[i];
+            validatorAddresses[i] = validator;
+
+            // 检查验证者是否投票，未投票视为反对投诉
+            if (session.votes[validator].hasVoted) {
+                validatorChoices[i] = session.votes[validator].choice;
+            } else {
+                validatorChoices[i] = DataStructures.VoteChoice.REJECT_COMPLAINT;
+            }
+
+            // 更新成功验证次数（投票正确的验证者）
+            bool votedCorrectly = false;
+            if (complaintUpheld && validatorChoices[i] == DataStructures.VoteChoice.SUPPORT_COMPLAINT) {
+                votedCorrectly = true;
+            } else if (!complaintUpheld && validatorChoices[i] == DataStructures.VoteChoice.REJECT_COMPLAINT) {
+                votedCorrectly = true;
+            }
+
+            if (votedCorrectly) {
+                validators[validator].successfulValidations++;
+            }
         }
 
         // 更新会话状态
@@ -437,6 +477,7 @@ contract VotingManager is Ownable {
             block.timestamp
         );
 
+        return (complaintUpheld, validatorAddresses, validatorChoices);
     }
 
     // ==================== 内部函数 ====================
@@ -640,6 +681,20 @@ contract VotingManager is Ownable {
         return _getActiveValidators().length;
     }
 
+    /**
+     * @notice 检查验证者是否参与了指定案件的投票
+     * @dev 公开函数，供其他合约（如DisputeManager）验证验证者参与状态
+     * @param caseId 案件ID
+     * @param validator 验证者地址
+     * @return 是否为该案件的选中验证者
+     */
+    function isSelectedValidator(
+        uint256 caseId,
+        address validator
+    ) external view returns (bool) {
+        return _isSelectedValidator(caseId, validator);
+    }
+
     // ==================== 管理函数 ====================
 
     /**
@@ -694,5 +749,32 @@ contract VotingManager is Ownable {
             0,
             block.timestamp
         );
+    }
+
+    /**
+     * @notice 设置支持者数量
+     * @dev 由治理合约调用，更新验证者的某个投票的支持者和反对者数量
+     * 用于记录质疑信息和投票结果
+     * @param choice 投票选择（支持或反对投诉）
+     * @param voterAddress 投票者地址
+     * @param doubterAddress 质疑者地址
+     */
+    function setSupportersNumber(
+        DataStructures.VoteChoice choice,
+        address voterAddress,
+        address doubterAddress,
+        uint256 caseId
+    ) external onlyGovernance {
+        DataStructures.VoteInfo voteInfo = votingSessions[caseId].votes[msg.voterAddress];
+        if (choice == DataStructures.VoteChoice.SUPPORT_COMPLAINT) {
+            voteInfo.SupportersNumber += 1;
+            voteInfo.supporters.push(doubterAddress);
+        } else if (choice == DataStructures.VoteChoice.REJECT_COMPLAINT) {
+            voteInfo.OpponentsNumber += 1;
+            voteInfo.opponents.push(doubterAddress);
+        } else {
+            revert Errors.InvalidVoteChoice(choice);
+        }
+
     }
 }
