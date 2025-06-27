@@ -5,8 +5,7 @@ import "forge-std/Script.sol";
 import "forge-std/console.sol";
 import "../src/FoodSafetyGovernance.sol";
 import "../src/modules/ParticipantPoolManager.sol";
-import "../src/modules/VotingManager.sol";
-import "../src/modules/DisputeManager.sol";
+import "../src/modules/VotingDisputeManager.sol";
 import "../src/modules/FundManager.sol";
 import "../src/modules/RewardPunishmentManager.sol";
 
@@ -20,8 +19,7 @@ contract DeployFoodSafetyGovernance is Script {
     // 部署的合约实例
     FoodSafetyGovernance public governance;
     ParticipantPoolManager public poolManager;
-    VotingManager public votingManager;
-    DisputeManager public disputeManager;
+    VotingDisputeManager public votingDisputeManager;
     FundManager public fundManager;
     RewardPunishmentManager public rewardManager;
     
@@ -68,23 +66,19 @@ contract DeployFoodSafetyGovernance is Script {
         console.log("\n=== Deploying Module Contracts ===");
         
         // 部署参与者池管理合约
-        poolManager = new ParticipantPoolManager();
+        poolManager = new ParticipantPoolManager(deployer);
         console.log("ParticipantPoolManager deployed at:", address(poolManager));
         
-        // 部署投票管理合约
-        votingManager = new VotingManager();
-        console.log("VotingManager deployed at:", address(votingManager));
-        
-        // 部署争议管理合约
-        disputeManager = new DisputeManager();
-        console.log("DisputeManager deployed at:", address(disputeManager));
+        // 部署投票和质疑管理合约（合并版）
+        votingDisputeManager = new VotingDisputeManager(deployer);
+        console.log("VotingDisputeManager deployed at:", address(votingDisputeManager));
         
         // 部署资金管理合约
-        fundManager = new FundManager();
+        fundManager = new FundManager(deployer);
         console.log("FundManager deployed at:", address(fundManager));
         
         // 部署奖惩管理合约
-        rewardManager = new RewardPunishmentManager();
+        rewardManager = new RewardPunishmentManager(deployer);
         console.log("RewardPunishmentManager deployed at:", address(rewardManager));
     }
     
@@ -94,13 +88,7 @@ contract DeployFoodSafetyGovernance is Script {
     function _deployGovernance() internal {
         console.log("\n=== Deploying Governance Contract ===");
         
-        governance = new FoodSafetyGovernance(
-            address(poolManager),
-            address(votingManager),
-            address(disputeManager),
-            address(fundManager),
-            address(rewardManager)
-        );
+        governance = new FoodSafetyGovernance(deployer);
         
         console.log("FoodSafetyGovernance deployed at:", address(governance));
     }
@@ -111,15 +99,21 @@ contract DeployFoodSafetyGovernance is Script {
     function _setupContractRelations() internal {
         console.log("\n=== Setting up Contract Relations ===");
         
+        // 初始化治理合约的模块地址
+        governance.initializeContracts(
+            payable(address(fundManager)),
+            address(votingDisputeManager),
+            address(rewardManager),
+            address(poolManager)
+        );
+        console.log("Governance contract initialized with module addresses");
+        
         // 设置治理合约地址到各模块
         poolManager.setGovernanceContract(address(governance));
         console.log("PoolManager governance set");
         
-        votingManager.setGovernanceContract(address(governance));
-        console.log("VotingManager governance set");
-        
-        disputeManager.setGovernanceContract(address(governance));
-        console.log("DisputeManager governance set");
+        votingDisputeManager.setGovernanceContract(address(governance));
+        console.log("VotingDisputeManager governance set");
         
         fundManager.setGovernanceContract(address(governance));
         console.log("FundManager governance set");
@@ -127,8 +121,11 @@ contract DeployFoodSafetyGovernance is Script {
         rewardManager.setGovernanceContract(address(governance));
         console.log("RewardManager governance set");
         
-        // 设置模块间的依赖关系（如果需要的话）
-        // 注意：实际的依赖关系需要根据合约接口确定
+        // 设置合并管理器的依赖关系
+        votingDisputeManager.setFundManager(address(fundManager));
+        votingDisputeManager.setPoolManager(address(poolManager));
+        console.log("VotingDisputeManager dependencies set");
+        
         console.log("Contract relations established");
     }
     
@@ -153,8 +150,7 @@ contract DeployFoodSafetyGovernance is Script {
         // 验证所有合约都已部署
         require(address(governance) != address(0), "Governance not deployed");
         require(address(poolManager) != address(0), "PoolManager not deployed");
-        require(address(votingManager) != address(0), "VotingManager not deployed");
-        require(address(disputeManager) != address(0), "DisputeManager not deployed");
+        require(address(votingDisputeManager) != address(0), "VotingDisputeManager not deployed");
         require(address(fundManager) != address(0), "FundManager not deployed");
         require(address(rewardManager) != address(0), "RewardManager not deployed");
         
@@ -173,8 +169,7 @@ contract DeployFoodSafetyGovernance is Script {
         console.log("\n=== Contract Addresses ===");
         console.log("FoodSafetyGovernance:", address(governance));
         console.log("ParticipantPoolManager:", address(poolManager));
-        console.log("VotingManager:", address(votingManager));
-        console.log("DisputeManager:", address(disputeManager));
+        console.log("VotingDisputeManager:", address(votingDisputeManager));
         console.log("FundManager:", address(fundManager));
         console.log("RewardPunishmentManager:", address(rewardManager));
     }
@@ -185,16 +180,14 @@ contract DeployFoodSafetyGovernance is Script {
     function getDeployedAddresses() external view returns (
         address _governance,
         address _poolManager,
-        address _votingManager,
-        address _disputeManager,
+        address _votingDisputeManager,
         address _fundManager,
         address _rewardManager
     ) {
         return (
             address(governance),
             address(poolManager),
-            address(votingManager),
-            address(disputeManager),
+            address(votingDisputeManager),
             address(fundManager),
             address(rewardManager)
         );

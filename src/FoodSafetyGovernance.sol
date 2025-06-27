@@ -8,8 +8,7 @@ import "./libraries/Events.sol"; // 标准化事件定义
 
 // 导入功能模块合约
 import "./modules/FundManager.sol"; // 资金和保证金管理模块
-import "./modules/VotingManager.sol"; // 投票和验证者管理模块
-import "./modules/DisputeManager.sol"; // 质疑和争议处理模块
+import "./modules/VotingDisputeManager.sol"; // 投票和质疑管理模块
 import "./modules/RewardPunishmentManager.sol"; // 奖惩计算和分配模块
 import "./modules/ParticipantPoolManager.sol"; // 参与者池管理模块
 
@@ -46,8 +45,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
 
     /// @notice 核心模块合约地址
     FundManager public fundManager;
-    VotingManager public votingManager;
-    DisputeManager public disputeManager;
+    VotingDisputeManager public votingDisputeManager;
     RewardPunishmentManager public rewardManager;
     ParticipantPoolManager public poolManager;
 
@@ -121,22 +119,19 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     /**
      * @notice 初始化模块合约地址
      * @param _fundManager 资金管理合约地址
-     * @param _votingManager 投票管理合约地址
-     * @param _disputeManager 质疑管理合约地址
+     * @param _votingDisputeManager 投票和质疑管理合约地址
      * @param _rewardManager 奖惩管理合约地址
      * @param _poolManager 参与者池管理合约地址
      */
     function initializeContracts(
         address payable _fundManager,
-        address _votingManager,
-        address _disputeManager,
+        address _votingDisputeManager,
         address _rewardManager,
         address _poolManager
     ) external onlyOwner {
         if (
             _fundManager == address(0) ||
-            _votingManager == address(0) ||
-            _disputeManager == address(0) ||
+            _votingDisputeManager == address(0) ||
             _rewardManager == address(0) ||
             _poolManager == address(0)
         ) {
@@ -144,8 +139,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         }
 
         fundManager = FundManager(_fundManager);
-        votingManager = VotingManager(_votingManager);
-        disputeManager = DisputeManager(_disputeManager);
+        votingDisputeManager = VotingDisputeManager(_votingDisputeManager);
         rewardManager = RewardPunishmentManager(_rewardManager);
         poolManager = ParticipantPoolManager(_poolManager);
 
@@ -428,8 +422,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         // 使用ParticipantPoolManager随机选择验证者
         address[] memory selectedValidators = poolManager.selectValidators(caseId, validatorCount);
 
-        // 将选中的验证者传递给VotingManager开始投票
-        votingManager.startVotingSessionWithValidators(
+        // 将选中的验证者传递给VotingDisputeManager开始投票
+        votingDisputeManager.startVotingSessionWithValidators(
             caseId,
             selectedValidators,
             config.votingPeriod
@@ -449,7 +443,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         emit Events.ValidatorsSelected(caseId, selectedValidators, block.timestamp);
     }
 
-
     /**
      * @notice 步骤4: 结束投票并开始质疑期
      * @param caseId 案件ID
@@ -463,17 +456,17 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     inStatus(caseId, DataStructures.CaseStatus.VOTING)
     {
         // 结束验证阶段并获取投票结果
-        (bool complaintUpheld, , ) = votingManager.endVotingSession(caseId);
+        votingDisputeManager.endVotingSession(caseId);
 
         CaseInfo storage caseInfo = cases[caseId];
-        caseInfo.complaintUpheld = complaintUpheld; // 记录投票结果
+//        caseInfo.complaintUpheld = complaintUpheld; // todo 质疑完成之后再记录投票结果
 
         // 开启质疑阶段
         caseInfo.status = DataStructures.CaseStatus.CHALLENGING;
 
         // 开始质疑期
         DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
-        disputeManager.startDisputeSession(caseId, config.challengePeriod);
+        votingDisputeManager.startDisputeSession(caseId, config.challengePeriod);
 
         emit Events.CaseStatusUpdated(
             caseId,
@@ -498,7 +491,11 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         CaseInfo storage caseInfo = cases[caseId];
 
         // 结束质疑期并获取质疑者详细信息
-        bool finalResult = disputeManager.endDisputeSession(caseId);
+        bool finalResult = votingDisputeManager.endDisputeSession(
+            caseId,
+            caseInfo.complainant,
+            caseInfo.enterprise
+        );
 
         // 更新最终结果
         caseInfo.complaintUpheld = finalResult;
@@ -536,12 +533,22 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         CaseInfo storage caseInfo = cases[caseId];
 
         // 步骤1：获取投票结果信息
-        DataStructures.VotingSession votingSession = votingManager.getVotingSessionInfo(caseId);
+        (
+            ,
+            address[] memory validators,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+        ) = votingDisputeManager.getVotingSessionInfo(caseId);
 
         // 步骤2：构建验证者投票选择数组
-        DataStructures.VoteChoice[] memory validatorChoices = new DataStructures.VoteChoice[](votingSession.validators.length);
+        DataStructures.VoteChoice[] memory validatorChoices = new DataStructures.VoteChoice[](validators.length);
         for (uint256 i = 0; i < validators.length; i++) {
-            DataStructures.VoteInfo memory vote = votingManager.getValidatorVote(caseId, validators[i]);
+            DataStructures.VoteInfo memory vote = votingDisputeManager.getValidatorVote(caseId, validators[i]);
             if (vote.hasVoted) {
                 validatorChoices[i] = vote.choice;
             } else {
@@ -551,7 +558,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         }
 
         // 步骤3：获取质疑者信息
-        DataStructures.ChallengeInfo[] memory challenges = disputeManager.getAllChallenges(caseId);
+        DataStructures.ChallengeInfo[] memory challenges = votingDisputeManager.getAllChallenges(caseId);
         address[] memory challengers = new address[](challenges.length);
         bool[] memory challengeResults = new bool[](challenges.length);
 
@@ -564,7 +571,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             uint256 disputeEndTime,
             uint256 totalChallenges,
             bool resultChanged
-        ) = disputeManager.getDisputeSessionInfo(caseId);
+        ) = votingDisputeManager.getDisputeSessionInfo(caseId);
 
         // 步骤4：分析质疑结果
         for (uint256 i = 0; i < challenges.length; i++) {

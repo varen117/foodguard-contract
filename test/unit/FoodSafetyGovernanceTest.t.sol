@@ -5,8 +5,7 @@ import "forge-std/Test.sol";
 import "forge-std/console.sol";
 import "../../src/FoodSafetyGovernance.sol";
 import "../../src/modules/FundManager.sol";
-import "../../src/modules/VotingManager.sol";
-import "../../src/modules/DisputeManager.sol";
+import "../../src/modules/VotingDisputeManager.sol";
 import "../../src/modules/RewardPunishmentManager.sol";
 import "../../src/modules/ParticipantPoolManager.sol";
 import "../../src/libraries/DataStructures.sol";
@@ -22,8 +21,7 @@ contract FoodSafetyGovernanceTest is Test {
 
     FoodSafetyGovernance public governance;
     FundManager public fundManager;
-    VotingManager public votingManager;
-    DisputeManager public disputeManager;
+    VotingDisputeManager public votingDisputeManager;
     RewardPunishmentManager public rewardManager;
     ParticipantPoolManager public poolManager;
 
@@ -74,30 +72,26 @@ contract FoodSafetyGovernanceTest is Test {
         governance = new FoodSafetyGovernance(admin);
 
         // 部署其他合约
-        votingManager = new VotingManager(admin);
-        disputeManager = new DisputeManager(admin);
+        votingDisputeManager = new VotingDisputeManager(admin);
         rewardManager = new RewardPunishmentManager(admin);
         poolManager = new ParticipantPoolManager(admin);
 
         // 初始化合约关联
         governance.initializeContracts(
             payable(address(fundManager)),
-            address(votingManager),
-            address(disputeManager),
+            address(votingDisputeManager),
             address(rewardManager),
             address(poolManager)
         );
 
         // 设置各模块的治理合约地址
-        votingManager.setGovernanceContract(address(governance));
-        disputeManager.setGovernanceContract(address(governance));
+        votingDisputeManager.setGovernanceContract(address(governance));
         rewardManager.setGovernanceContract(address(governance));
         poolManager.setGovernanceContract(address(governance));
 
         // 设置模块间的关联
-        disputeManager.setFundManager(address(fundManager));
-        disputeManager.setVotingManager(address(votingManager));
-        disputeManager.setPoolManager(address(poolManager));
+        votingDisputeManager.setFundManager(address(fundManager));
+        votingDisputeManager.setPoolManager(address(poolManager));
         rewardManager.setFundManager(address(fundManager));
 
         // 设置权限
