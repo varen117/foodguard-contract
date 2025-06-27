@@ -230,32 +230,8 @@ contract VotingManager is Ownable, CommonModifiers {
     /**
      * @notice 获取投票会话信息（分解版本，避免mapping返回）
      */
-    function getVotingSessionInfo(uint256 caseId) external view caseExists(caseId) returns (
-        uint256 caseId_,
-        address[] memory selectedValidators,
-        uint256 supportVotes,
-        uint256 rejectVotes,
-        uint256 totalVotes,
-        uint256 startTime,
-        uint256 endTime,
-        bool isActive,
-        bool isCompleted,
-        bool complaintUpheld
-    ) {
-        DataStructures.VotingSession storage session = votingSessions[caseId];
-        
-        return (
-            session.caseId,
-            session.selectedValidators,
-            session.supportVotes,
-            session.rejectVotes,
-            session.totalVotes,
-            session.startTime,
-            session.endTime,
-            session.isActive,
-            session.isCompleted,
-            session.complaintUpheld
-        );
+    function getVotingSessionInfo(uint256 caseId) external view caseExists(caseId) returns (DataStructures.VotingSession) {
+        return votingSessions[caseId];
     }
 
 
@@ -325,7 +301,7 @@ contract VotingManager is Ownable, CommonModifiers {
         string calldata reason
     ) external onlyGovernance caseExists(caseId) {
         DataStructures.VotingSession storage session = votingSessions[caseId];
-        
+
         // 验证验证者确实参与了此案件
         if (!session.votes[validator].hasVoted) {
             revert Errors.ValidatorNotParticipating(validator, caseId);
@@ -368,7 +344,7 @@ contract VotingManager is Ownable, CommonModifiers {
         bool finalComplaintUpheld
     ) external onlyGovernance caseExists(caseId) {
         DataStructures.VotingSession storage session = votingSessions[caseId];
-        
+
         // 更新最终的投票统计
         session.supportVotes = finalSupportVotes;
         session.rejectVotes = finalRejectVotes;
@@ -417,7 +393,7 @@ contract VotingManager is Ownable, CommonModifiers {
 
             DataStructures.VoteInfo storage voteInfo = session.votes[validator];
             DataStructures.VoteChoice oldChoice = voteInfo.finalChoice;
-            
+
             if (oldChoice != newChoice) {
                 voteInfo.finalChoice = newChoice;
 

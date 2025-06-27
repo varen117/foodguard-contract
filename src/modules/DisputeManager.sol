@@ -250,8 +250,8 @@ contract DisputeManager is Ownable, CommonModifiers {
         uint256 finalSupportVotes;     // 最终支持票数
         uint256 finalRejectVotes;      // 最终反对票数
         bool finalComplaintUpheld;     // 最终投诉是否成立
-        address[] successfulChallengers; // 成功的质疑者列表
-        address[] challengedValidators;  // 被成功质疑的验证者列表
+        mapping(DataStructures.UserRole => address[]) rewardMember; //奖励成员列表
+        mapping(DataStructures.UserRole => address[]) punishMember;//惩罚成员列表
     }
 
     // ==================== 修饰符 ====================
@@ -619,15 +619,15 @@ contract DisputeManager is Ownable, CommonModifiers {
                 disputeResult.changedVotes++;
 
                 // 处理奖惩
-                _addAddressesToList(caseId, DataStructures.UserRole.DAO_MEMBER, challengeInfo.opponents, true);
-                _addAddressesToList(caseId, DataStructures.UserRole.DAO_MEMBER, challengeInfo.supporters, false);
-                punishMember[caseId][DataStructures.UserRole.DAO_MEMBER].push(targetValidator);
+                _addAddressesToList(DataStructures.UserRole.DAO_MEMBER, challengeInfo.opponents, disputeResult, true);
+                _addAddressesToList(DataStructures.UserRole.DAO_MEMBER, challengeInfo.supporters, disputeResult, false);
+                disputeResult.punishMember[DataStructures.UserRole.DAO_MEMBER].push(targetValidator);
 
                 // 模拟投票翻转（简化逻辑）
                 disputeResult.finalRejectVotes++;
             } else {
                 // 质疑失败，维持原结果
-                _addAddressesToList(caseId, DataStructures.UserRole.DAO_MEMBER, challengeInfo.supporters, true);
+                _addAddressesToList(, DataStructures.UserRole.DAO_MEMBER, challengeInfo.supporters, true);
                 _addAddressesToList(caseId, DataStructures.UserRole.DAO_MEMBER, challengeInfo.opponents, false);
 
                 // 维持原投票
@@ -870,16 +870,16 @@ contract DisputeManager is Ownable, CommonModifiers {
      * @param isReward 是否为奖励列表（true为奖励，false为惩罚）
      */
     function _addAddressesToList(
-        uint256 caseId,
         DataStructures.UserRole role,
         address[] storage addresses,
+        DisputeResult memory disputeResult,
         bool isReward
     ) internal {
         for (uint i = 0; i < addresses.length; i++) {
             if (isReward) {
-                rewardMember[caseId][role].push(addresses[i]);
+                disputeResult.rewardMember[role].push(addresses[i]);
             } else {
-                punishMember[caseId][role].push(addresses[i]);
+                disputeResult.punishMember[role].push(addresses[i]);
             }
         }
     }
@@ -1084,8 +1084,8 @@ contract DisputeManager is Ownable, CommonModifiers {
         return punishMember[caseId][role];
     }
 
-        /**
-     * @notice 获取案件的所有奖惩结果概览
+    /**
+ * @notice 获取案件的所有奖惩结果概览
      * @dev 返回案件的奖惩结果统计信息
      * @param caseId 案件ID
      * @return totalRewardedDAO DAO成员奖励总数
