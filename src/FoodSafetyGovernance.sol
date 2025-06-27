@@ -368,17 +368,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             block.timestamp
         );
 
-        // 步骤4：高风险案件特殊处理
-        // 高风险案件需要更多关注和更快的处理速度
-        if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
-            emit Events.HighRiskCaseProcessed(
-                caseId,
-                caseInfo.complainantDeposit + caseInfo.enterpriseDeposit, // 总锁定金额
-                _getAffectedUsers(caseId), // 受影响的用户列表
-                block.timestamp
-            );
-        }
-
         // 步骤5：自动启动投票流程
         // 保证金锁定成功后立即进入投票阶段，提高处理效率
         _startVoting(caseId);
@@ -547,21 +536,10 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         CaseInfo storage caseInfo = cases[caseId];
 
         // 步骤1：获取投票结果信息
-        (
-            uint256 caseIdVoting,
-            address[] memory validators,
-            uint256 supportVotes,
-            uint256 rejectVotes,
-            uint256 totalVotes,
-            uint256 startTime,
-            uint256 endTime,
-            bool isActive,
-            bool isCompleted,
-            bool complaintUpheld
-        ) = votingManager.getVotingSessionInfo(caseId);
+        DataStructures.VotingSession votingSession = votingManager.getVotingSessionInfo(caseId);
 
         // 步骤2：构建验证者投票选择数组
-        DataStructures.VoteChoice[] memory validatorChoices = new DataStructures.VoteChoice[](validators.length);
+        DataStructures.VoteChoice[] memory validatorChoices = new DataStructures.VoteChoice[](votingSession.validators.length);
         for (uint256 i = 0; i < validators.length; i++) {
             DataStructures.VoteInfo memory vote = votingManager.getValidatorVote(caseId, validators[i]);
             if (vote.hasVoted) {

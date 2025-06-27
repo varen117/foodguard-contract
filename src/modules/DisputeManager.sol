@@ -8,30 +8,43 @@ import "../libraries/CommonModifiers.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
- * @notice VotingManager接口
- * @dev 定义DisputeManager需要调用的VotingManager函数
+ * @notice 投票管理合约接口
+ * @dev 定义DisputeManager需要调用的投票管理合约函数
+ * 用于验证质疑目标的合法性和获取投票会话信息
  */
 interface IVotingManager {
+    /**
+     * @notice 检查指定验证者是否参与了指定案件的投票
+     * @dev 质疑者只能质疑确实参与了投票的验证者
+     * @param caseId 案件ID
+     * @param validator 验证者地址
+     * @return 是否为该案件的选中验证者
+     */
     function isSelectedValidator(uint256 caseId, address validator) external view returns (bool);
-    function getVotingSessionInfo(uint256 caseId) external view returns (
-        uint256, // caseId
-        address[] memory, // selectedValidators
-        uint256, // supportVotes
-        uint256, // rejectVotes
-        uint256, // totalVotes
-        uint256, // startTime
-        uint256, // endTime
-        bool, // isActive
-        bool, // isCompleted
-        bool // complaintUpheld
-    );
+    
+    /**
+     * @notice 获取投票会话的完整信息
+     * @dev 返回指定案件的投票会话详细数据，用于质疑结果计算
+     * @param caseId 案件ID
+     * @return votingSession 完整的投票会话结构体
+     */
+    function getVotingSessionInfo(uint256 caseId) external view caseExists(caseId) returns (DataStructures.VotingSession);
 }
 
 /**
- * @notice FundManager接口
- * @dev 定义DisputeManager需要调用的FundManager函数
+ * @notice 资金管理合约接口
+ * @dev 定义DisputeManager需要调用的资金管理合约函数
+ * 用于处理质疑过程中的保证金冻结和解冻操作
  */
 interface IFundManager {
+    /**
+     * @notice 冻结用户保证金
+     * @dev 在用户提交质疑时冻结相应的保证金，确保质疑的严肃性
+     * @param caseId 案件ID
+     * @param user 用户地址
+     * @param riskLevel 案件风险级别
+     * @param baseAmount 基础保证金金额
+     */
     function freezeDeposit(
         uint256 caseId,
         address user,
@@ -39,14 +52,29 @@ interface IFundManager {
         uint256 baseAmount
     ) external;
 
+    /**
+     * @notice 解冻用户保证金
+     * @dev 在质疑期结束后解冻用户的保证金，恢复资金可用性
+     * @param caseId 案件ID
+     * @param user 用户地址
+     */
     function unfreezeDeposit(uint256 caseId, address user) external;
 }
 
 /**
- * @notice ParticipantPoolManager接口
- * @dev 定义DisputeManager需要调用的ParticipantPoolManager函数
+ * @notice 参与者池管理合约接口
+ * @dev 定义DisputeManager需要调用的参与者池管理函数
+ * 用于验证质疑者的角色权限和参与资格
  */
 interface IParticipantPoolManager {
+    /**
+     * @notice 检查用户是否可以参与指定案件的指定角色
+     * @dev 验证用户是否具有合适的角色且未参与该案件的其他阶段
+     * @param caseId 案件ID
+     * @param user 用户地址
+     * @param requiredRole 要求的角色类型
+     * @return 是否可以参与
+     */
     function canParticipateInCase(
         uint256 caseId,
         address user,
@@ -66,72 +94,84 @@ contract DisputeManager is Ownable, CommonModifiers {
     // ==================== 状态变量 ====================
     // governanceContract 已在 CommonModifiers 中定义
 
-    /// @notice 资金管理合约 - 负责处理质疑保证金的合约
-    /// @dev 质疑保证金需要通过资金管理合约进行冻结和释放
+    /// @notice 资金管理合约实例
+    /// @dev 负责处理质疑保证金的冻结和解冻操作
+    /// 质疑保证金需要通过资金管理合约进行统一管理
     IFundManager public fundManager;
 
-    /// @notice 投票管理合约 - 用于验证被质疑的验证者信息
-    /// @dev 需要验证被质疑的验证者确实参与了相关案件的投票
+    /// @notice 投票管理合约实例
+    /// @dev 用于验证被质疑的验证者信息和获取投票会话数据
+    /// 需要验证被质疑的验证者确实参与了相关案件的投票
     IVotingManager public votingManager;
 
-    /// @notice 参与者池管理合约 - 用于验证用户角色和参与权限
-    /// @dev 验证质疑者是否具有DAO_MEMBER角色且未参与此案件
+    /// @notice 参与者池管理合约实例
+    /// @dev 用于验证用户角色和参与权限
+    /// 验证质疑者是否具有DAO_MEMBER角色且未参与此案件
     IParticipantPoolManager public poolManager;
 
-    /// @notice 案件质疑信息映射 caseId => DisputeSession
+    /// @notice 案件质疑会话映射
     /// @dev 存储每个案件的完整质疑会话信息
+    /// 键：案件ID，值：质疑会话结构体
+    /// 包含质疑期时间管理、质疑统计和结果处理
     mapping(uint256 => DisputeSession) public disputeSessions;
 
-    /// @notice 用户质疑历史记录 user => caseId => hasDisputed
-    /// @dev 记录用户的质疑参与历史，防止重复操作
+    /// @notice 用户质疑历史记录映射
+    /// @dev 记录用户的质疑参与历史，防止重复操作和恶意行为
+    /// 第一层键：用户地址，第二层键：案件ID，值：是否已质疑
     mapping(address => mapping(uint256 => bool)) public userDisputeHistory;
 
-    /// @notice 验证者被质疑次数统计 validator => disputeCount
+    /// @notice 验证者被质疑次数统计映射
     /// @dev 跟踪每个验证者被质疑的总次数，用于评估验证者表现
+    /// 键：验证者地址，值：累计被质疑次数
+    /// 被质疑次数过多可能影响验证者的信誉和选中概率
     mapping(address => uint256) public validatorDisputeCount;
 
-    /// @notice 质疑成功率统计 challenger => successCount
+    /// @notice 质疑者成功质疑次数统计映射
     /// @dev 记录每个质疑者成功质疑的次数，评估质疑质量
+    /// 键：质疑者地址，值：成功质疑次数
+    /// 成功率高的质疑者在系统中具有更高的可信度
     mapping(address => uint256) public challengerSuccessCount;
 
-    /// @notice 质疑参与次数统计 challenger => totalCount
-    /// @dev 记录每个质疑者的总参与次数，计算成功率使用
+    /// @notice 质疑者总参与次数统计映射
+    /// @dev 记录每个质疑者的总参与次数，用于计算成功率
+    /// 键：质疑者地址，值：总参与次数
+    /// 与成功次数结合可以计算质疑者的准确率
     mapping(address => uint256) public challengerTotalCount;
 
     // ==================== 结构体定义 ====================
 
     /**
      * @notice 质疑会话结构体
-     * @dev 记录单个案件的完整质疑信息
+     * @dev 记录单个案件的完整质疑信息和状态管理
      * 包含质疑期的时间管理、质疑统计和结果处理
+     * 每个案件只有一个质疑会话，管理该案件的所有质疑活动
      */
     struct DisputeSession {
-        uint256 caseId; // 案件ID - 与此质疑会话关联的案件标识
-        bool isActive; // 质疑期是否激活 - 当前是否可以提交质疑
-        bool isCompleted; // 质疑是否完成 - 质疑流程是否已结束
-        uint256 startTime; // 质疑开始时间 - 质疑期开始的时间戳
-        uint256 endTime; // 质疑结束时间 - 质疑期截止的时间戳
-        uint256 totalChallenges; // 总质疑数量 - 收到的质疑总数
-        bool resultChanged; // 结果是否改变 - 质疑是否成功改变了投票结果
-        // 质疑信息数组 - 存储所有提交的质疑详情
-        DataStructures.ChallengeInfo[] challenges;
-        mapping(address => DataStructures.ChallengeVotingInfo) challengeVotingInfo; // 质疑投票信息映射
-        // 验证者质疑统计 validator => ChallengeStats
-        mapping(address => ChallengeStats) validatorChallengeStats;
-        // 质疑者映射 challenger => true - 快速查询某地址是否参与质疑
-        mapping(address => bool) challengers;
+        uint256 caseId;             // 案件ID：与此质疑会话关联的案件唯一标识符
+        bool isActive;              // 质疑期激活状态：当前是否可以提交新的质疑
+        bool isCompleted;           // 质疑完成状态：质疑流程是否已结束并处理完毕
+        uint256 startTime;          // 质疑开始时间：质疑期开始的时间戳
+        uint256 endTime;            // 质疑结束时间：质疑期截止的时间戳
+        uint256 totalChallenges;    // 总质疑数量：收到的质疑总数，用于统计和分析
+        bool resultChanged;         // 结果改变标志：质疑是否成功改变了原始投票结果
+        
+        // 质疑信息存储
+        DataStructures.ChallengeInfo[] challenges;                             // 质疑信息数组：存储所有提交的质疑详细信息
+        mapping(address => DataStructures.ChallengeVotingInfo) challengeVotingInfo; // 质疑投票信息映射：按验证者分组的质疑信息
+        mapping(address => ChallengeStats) validatorChallengeStats;             // 验证者质疑统计：每个验证者的被质疑情况统计
+        mapping(address => bool) challengers;                                  // 质疑者映射：快速查询某地址是否参与质疑
     }
 
     /**
      * @notice 验证者质疑统计结构体
-     * @dev 统计针对特定验证者的质疑情况
+     * @dev 统计针对特定验证者的质疑情况，用于分析和决策
      * 包括支持和反对的质疑数量及质疑者列表
      */
     struct ChallengeStats {
-        uint256 supportCount; // 支持验证者的质疑数量 - 认为验证者判断正确的质疑
-        uint256 opposeCount; // 反对验证者的质疑数量 - 认为验证者判断错误的质疑
-        bool hasBeenChallenged; // 是否被质疑过 - 该验证者是否收到过质疑
-        address[] challengers; // 质疑者列表 - 所有质疑该验证者的地址
+        uint256 supportCount;       // 支持验证者的质疑数量：认为验证者判断正确的质疑总数
+        uint256 opposeCount;        // 反对验证者的质疑数量：认为验证者判断错误的质疑总数
+        bool hasBeenChallenged;     // 被质疑标志：该验证者是否在此案件中收到过质疑
+        address[] challengers;      // 质疑者地址列表：所有质疑该验证者的用户地址
     }
 
     // ==================== 修饰符 ====================
@@ -232,8 +272,8 @@ contract DisputeManager is Ownable, CommonModifiers {
         // 验证质疑者必须是DAO成员且未参与此案件
         if (!poolManager.canParticipateInCase(caseId, msg.sender, DataStructures.UserRole.DAO_MEMBER)) {
             revert Errors.InvalidUserRole(
-                msg.sender, 
-                uint8(DataStructures.UserRole.DAO_MEMBER), 
+                msg.sender,
+                uint8(DataStructures.UserRole.DAO_MEMBER),
                 uint8(DataStructures.UserRole.DAO_MEMBER)
             );
         }
@@ -373,18 +413,7 @@ contract DisputeManager is Ownable, CommonModifiers {
         }
 
         // 获取原始投票结果
-        (
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            bool originalResult
-        ) = votingManager.getVotingSessionInfo(caseId);
+        DataStructures.VotingSession votingSession = votingManager.getVotingSessionInfo(caseId);
 
         // 如果没有收到任何质疑，结果保持不变
         if (session.totalChallenges == 0) {
@@ -397,7 +426,7 @@ contract DisputeManager is Ownable, CommonModifiers {
             // 返回空数组
             challengerAddresses = new address[](0);
             challengeSuccessful = new bool[](0);
-            return (originalResult, false, challengerAddresses, challengeSuccessful);
+            return (votingSession.caseId, false, challengerAddresses, challengeSuccessful);
         }
 
         // 根据质疑情况计算最终结果

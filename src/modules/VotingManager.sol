@@ -19,29 +19,10 @@ contract VotingManager is Ownable, CommonModifiers {
     // ==================== 状态变量 ====================
 
     /// @notice 案件的投票信息映射
-    mapping(uint256 => VotingSession) public votingSessions;
+    mapping(uint256 => DataStructures.VotingSession) public votingSessions;
 
     /// @notice 用户参与的投票记录 user => caseId => hasVoted（保留用于防重复投票）
     mapping(address => mapping(uint256 => bool)) public userVotingHistory;
-
-    // ==================== 简化的结构体定义 ====================
-
-    /**
-     * @notice 简化的投票会话结构体
-     */
-    struct VotingSession {
-        uint256 caseId;
-        address[] selectedValidators;
-        mapping(address => DataStructures.VoteInfo) votes;
-        uint256 supportVotes;
-        uint256 rejectVotes;
-        uint256 totalVotes;
-        uint256 startTime;
-        uint256 endTime;
-        bool isActive;
-        bool isCompleted;
-        bool complaintUpheld;
-    }
 
     // ==================== 简化的修饰符 ====================
 
@@ -59,7 +40,7 @@ contract VotingManager is Ownable, CommonModifiers {
      * @notice 检查投票是否激活
      */
     modifier votingActive(uint256 caseId) {
-        VotingSession storage session = votingSessions[caseId];
+        DataStructures.VotingSession storage session = votingSessions[caseId];
         if (!session.isActive || block.timestamp > session.endTime) {
             revert Errors.VotingPeriodEnded(session.endTime, block.timestamp);
         }
@@ -94,7 +75,7 @@ contract VotingManager is Ownable, CommonModifiers {
         }
 
         // 创建并初始化投票会话
-        VotingSession storage session = votingSessions[caseId];
+        DataStructures.VotingSession storage session = votingSessions[caseId];
         session.caseId = caseId;
         session.selectedValidators = selectedValidators;
         session.startTime = block.timestamp;
@@ -120,18 +101,6 @@ contract VotingManager is Ownable, CommonModifiers {
     }
 
     /**
-     * @notice 开始投票会话（传统方式，保持兼容性）
-     */
-    function startVotingSession(
-        uint256 caseId,
-        uint256 requiredValidators,
-        uint256 votingDuration
-    ) external onlyGovernance returns (address[] memory selectedValidators) {
-        // 这个函数不再自己选择验证者，而是期望治理合约传入预选的验证者
-        revert Errors.InvalidConfiguration("Use startVotingSessionWithValidators", requiredValidators);
-    }
-
-    /**
      * @notice 提交投票
      */
     function submitVote(
@@ -140,11 +109,11 @@ contract VotingManager is Ownable, CommonModifiers {
         string calldata reason,
         string calldata evidenceHash
     )
-        external
-        caseExists(caseId)
-        votingActive(caseId)
+    external
+    caseExists(caseId)
+    votingActive(caseId)
     {
-        VotingSession storage session = votingSessions[caseId];
+        DataStructures.VotingSession storage session = votingSessions[caseId];
 
         // 验证用户是否已投票
         if (userVotingHistory[msg.sender][caseId]) {
@@ -209,16 +178,16 @@ contract VotingManager is Ownable, CommonModifiers {
     function endVotingSession(
         uint256 caseId
     )
-        external
-        onlyGovernance
-        caseExists(caseId)
-        returns (
-            bool complaintUpheld,
-            address[] memory validatorAddresses,
-            DataStructures.VoteChoice[] memory validatorChoices
-        )
+    external
+    onlyGovernance
+    caseExists(caseId)
+    returns (
+        bool complaintUpheld,
+        address[] memory validatorAddresses,
+        DataStructures.VoteChoice[] memory validatorChoices
+    )
     {
-        VotingSession storage session = votingSessions[caseId];
+        DataStructures.VotingSession storage session = votingSessions[caseId];
 
         if (session.isCompleted) {
             revert Errors.DuplicateOperation(address(0), "end voting");
@@ -260,28 +229,8 @@ contract VotingManager is Ownable, CommonModifiers {
     /**
      * @notice 获取投票会话信息
      */
-    function getVotingSessionInfo(
-        uint256 caseId
-    )
-        external
-        view
-        caseExists(caseId)
-        returns (
-            uint256,
-            address[] memory,
-            uint256,
-            uint256,
-            bool
-        )
-    {
-        VotingSession storage session = votingSessions[caseId];
-        return (
-            session.caseId,
-            session.selectedValidators,
-            session.supportVotes,
-            session.rejectVotes,
-            session.complaintUpheld
-        );
+    function getVotingSessionInfo(uint256 caseId) external view caseExists(caseId) returns (DataStructures.VotingSession) {
+        return votingSessions[caseId];
     }
 
     /**
@@ -291,10 +240,10 @@ contract VotingManager is Ownable, CommonModifiers {
         uint256 caseId,
         address validator
     )
-        external
-        view
-        caseExists(caseId)
-        returns (DataStructures.VoteInfo memory)
+    external
+    view
+    caseExists(caseId)
+    returns (DataStructures.VoteInfo memory)
     {
         return votingSessions[caseId].votes[validator];
     }
@@ -306,9 +255,9 @@ contract VotingManager is Ownable, CommonModifiers {
         uint256 caseId,
         address validator
     )
-        external
-        view
-        returns (bool)
+    external
+    view
+    returns (bool)
     {
         if (votingSessions[caseId].caseId == 0) {
             return false;
@@ -327,10 +276,10 @@ contract VotingManager is Ownable, CommonModifiers {
      * @notice 获取案件验证者列表
      */
     function getCaseValidators(uint256 caseId)
-        external
-        view
-        caseExists(caseId)
-        returns (address[] memory)
+    external
+    view
+    caseExists(caseId)
+    returns (address[] memory)
     {
         return votingSessions[caseId].selectedValidators;
     }
