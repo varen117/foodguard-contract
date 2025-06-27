@@ -458,7 +458,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         DisputeSession storage session, // 质疑会话存储引用
         address complainantAddress,
         address enterpriseAddress
-    ) internal returns(bool,bool){ // 质疑结果内存结构体
+    ) internal returns (bool, bool){ // 质疑结果内存结构体
         // 简化实现：基于质疑会话中的信息处理
         DataStructures.VotingSession votingSession = votingSessions[caseId];
 
@@ -492,7 +492,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
             }
         }
         bool newResult = votingSession.supportVotes > votingSession.rejectVotes;// 投诉是否成立
-        bool resultChanged =votingSession.complaintUpheld != newResult;
+        bool resultChanged = votingSession.complaintUpheld != newResult;
         // 计算最终结果
         votingSession.complaintUpheld = newResult;
         if (newResult) {
@@ -554,43 +554,14 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
     // ==================== 查询函数 ====================
 
     /**
-     * @notice 获取投票会话信息（分解版本，避免mapping返回）
+     * @notice 获取案件的投票奖励和惩罚成员
+     * @param 案件ID
      */
-    function getVotingSessionInfo(uint256 caseId) external view caseExists(caseId) returns ( // 案件ID
-        uint256 caseId_, // 案件ID返回值
-        address[] memory selectedValidators, // 选定的验证者数组
-        uint256 supportVotes, // 支持票数
-        uint256 rejectVotes, // 反对票数
-        uint256 totalVotes, // 总票数
-        uint256 startTime, // 开始时间
-        uint256 endTime, // 结束时间
-        bool isActive, // 是否活跃
-        bool isCompleted, // 是否已完成
-        bool complaintUpheld // 投诉是否成立
-    ) {
-        DataStructures.VotingSession storage session = votingSessions[caseId]; // 投票会话存储引用
-
-        return (
-            session.caseId,
-            session.selectedValidators,
-            session.supportVotes,
-            session.rejectVotes,
-            session.totalVotes,
-            session.startTime,
-            session.endTime,
-            session.isActive,
-            session.isCompleted,
-            session.complaintUpheld
-        );
+    function getVotingRewardAndPunishmentMembers(uint256 caseId) external view returns (
+        mapping(DataStructures.UserRole => address[]),
+        mapping(DataStructures.UserRole => address[])) {
+        return (rewardMember[caseId], punishMember[caseId]);
     }
-
-    /**
-     * @notice 获取验证者投票信息
-     */
-    function getValidatorVote(uint256 caseId, address validator) external view caseExists(caseId) returns (DataStructures.VoteInfo memory) { // 案件ID, 验证者地址
-        return votingSessions[caseId].votes[validator];
-    }
-
     /**
      * @notice 检查验证者是否参与案件
      */
@@ -606,35 +577,6 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
             }
         }
         return false;
-    }
-
-    /**
-     * @notice 获取案件验证者列表
-     */
-    function getCaseValidators(uint256 caseId) external view caseExists(caseId) returns (address[] memory) { // 案件ID
-        return votingSessions[caseId].selectedValidators;
-    }
-
-    /**
-     * @notice 获取质疑会话信息
-     */
-    function getDisputeSessionInfo(uint256 caseId) external view returns ( // 案件ID
-        uint256, // 案件ID返回值
-        bool, // 是否活跃
-        bool, // 是否已完成
-        uint256, // 开始时间
-        uint256, // 结束时间
-        uint256 // 总质疑数量
-    ) {
-        DisputeSession storage session = disputeSessions[caseId]; // 质疑会话存储引用
-        return (
-            session.caseId,
-            session.isActive,
-            session.isCompleted,
-            session.startTime,
-            session.endTime,
-            session.totalChallenges,
-        );
     }
 
     /**
@@ -665,13 +607,6 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
      */
     function hasUserDisputed(address user, uint256 caseId) external view returns (bool) { // 用户地址, 案件ID
         return userDisputeHistory[user][caseId];
-    }
-
-    /**
-     * @notice 获取案件的所有质疑
-     */
-    function getAllChallenges(uint256 caseId) external view returns (DataStructures.ChallengeInfo[] memory) { // 案件ID
-        return disputeSessions[caseId].challenges;
     }
 
     /**
@@ -767,4 +702,6 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
 
         emit Events.EmergencyTriggered(caseId, "Emergency pause of dispute session", msg.sender, block.timestamp);
     }
+
+
 }

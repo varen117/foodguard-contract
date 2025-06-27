@@ -68,8 +68,12 @@ contract RewardPunishmentManager is Ownable {
         mapping(address => PersonalReward) personalRewards; // 个人奖励详情
         mapping(address => PersonalPunishment) personalPunishments; // 个人惩罚详情
         // 参与者列表 - 便于遍历和统计
-        address[] rewardRecipients; // 获得奖励的用户列表
-        address[] punishmentTargets; // 承担惩罚的用户列表
+        address[] complainantRewardRecipients; // 获得补偿的投诉用户列表
+        address[] complainantPunishmentTargets; // 获得惩罚的投诉用户列表
+        address[] enterpriseRewardRecipients; // 获得奖励的企业用户列表
+        address[] enterprisePunishmentTargets; // 获得惩罚的企业用户列表
+        address[] daoRewardRecipients; // 获得奖励的dao用户列表
+        address[] daoRewardPunishmentTargets;//获得惩罚的dao用户列表
     }
 
     /**
@@ -137,76 +141,57 @@ contract RewardPunishmentManager is Ownable {
     /**
      * @notice 处理案件奖惩（主要入口函数）
      * @param caseId 案件ID
-     * @param complaintUpheld 投诉是否成立
-     * @param riskLevel 风险等级
-     * @param complainant 投诉者地址
-     * @param enterprise 企业地址
-     * @param validators 验证者地址数组
-     * @param validatorChoices 验证者投票选择数组
-     * @param challengers 质疑者地址数组
-     * @param challengeSuccessful 质疑者是否成功数组
      */
     function processCaseRewardPunishment(
         uint256 caseId,
+        address[] memory complainantRewards,
+        address[] memory enterpriseRewards,
+        address[] memory daoRewards,
+        address[] memory complainantPunishments,
+        address[] memory enterprisePunishments,
+        address[] memory daoPunishments,
         bool complaintUpheld,
-        DataStructures.RiskLevel riskLevel,
-        address complainant,
-        address enterprise,
-        address[] calldata validators,
-        DataStructures.VoteChoice[] calldata validatorChoices,
-        address[] calldata challengers,
-        bool[] calldata challengeSuccessful
+        DataStructures.RiskLevel riskLevel
     ) external onlyGovernance caseNotProcessed(caseId) {
-        // 验证输入参数
-        if (validators.length != validatorChoices.length) {
-            revert Errors.InvalidAmount(
-                validators.length,
-                validatorChoices.length
-            );
+        RewardPunishmentRecord storage record = caseRewards[caseId];
+        if (record.isProcessed) {
+            revert Errors.RewardPunishmentAlreadyProcessed(caseId);
+        }
+        if (complainantRewards.length == 0 &&
+        enterpriseRewards.length == 0 &&
+        daoRewards.length == 0 &&
+        complainantPunishments.length == 0 &&
+        enterprisePunishments.length == 0 &&
+            daoPunishments.length == 0) {
+            revert Errors.NoRewardOrPunishmentMembers("No Reward or Punishment Members");
         }
 
-        if (challengers.length != challengeSuccessful.length) {
-            revert Errors.InvalidAmount(
-                challengers.length,
-                challengeSuccessful.length
-            );
-        }
-
-        // 边界条件检查
-        if (validators.length == 0) {
-            emit Events.BusinessProcessAnomaly(
-                caseId,
-                address(0),
-                "Reward Processing",
-                "No validators to process",
-                "Skip validator rewards",
-                block.timestamp
-            );
-        }
-
-        // 检查是否有重复的验证者地址
-        for (uint256 i = 0; i < validators.length; i++) {
-            for (uint256 j = i + 1; j < validators.length; j++) {
-                if (validators[i] == validators[j]) {
-                    emit Events.BusinessProcessAnomaly(
-                        caseId,
-                        validators[i],
-                        "Reward Processing",
-                        "Duplicate validator detected",
-                        "Continue with warning",
-                        block.timestamp
-                    );
-                }
-            }
-        }
+        // 检查重复地址
+        _validateNoDuplicateAddresses(
+            complainantRewards, enterpriseRewards, daoRewards,
+            complainantPunishments, enterprisePunishments, daoPunishments
+        );
 
         // 创建奖惩记录
-        RewardPunishmentRecord storage record = caseRewards[caseId];
         record.caseId = caseId;
+        record.complainantRewardRecipients = complainantRewards;
+        record.complainantPunishmentTargets = complainantPunishments;
+        record.enterpriseRewardRecipients = enterpriseRewards;
+        record.enterprisePunishmentTargets = enterprisePunishments;
+        record.daoRewardRecipients = daoRewards;
+        record.daoRewardPunishmentTargets = daoPunishments;
+        // 投诉是否成立
         record.complaintUpheld = complaintUpheld;
+        // 风险等级
         record.riskLevel = riskLevel;
-        record.isProcessed = false;
+        //处理时间
         record.processTime = block.timestamp;
+        record.isProcessed = false;
+
+        // 计算总奖励金额和总惩罚金额
+
+
+
 
         emit Events.RewardPunishmentCalculationStarted(
             caseId,
@@ -214,25 +199,8 @@ contract RewardPunishmentManager is Ownable {
             block.timestamp
         );
 
-        // 处理验证者奖惩
-        _processValidatorRewards(
-            caseId,
-            validators,
-            validatorChoices,
-            complaintUpheld
-        );
 
-        // 处理质疑者奖惩
-        _processChallengerRewards(caseId, challengers, challengeSuccessful);
 
-        // 处理投诉者和企业奖惩
-        _processComplainantEnterpriseRewards(
-            caseId,
-            complainant,
-            enterprise,
-            complaintUpheld,
-            riskLevel
-        );
 
         // 标记案件已处理
         caseProcessed[caseId] = true;
@@ -240,486 +208,77 @@ contract RewardPunishmentManager is Ownable {
     }
 
     /**
-     * @notice 处理验证者奖惩
-     * @param caseId 案件ID
-     * @param validators 验证者数组
-     * @param choices 投票选择数组
-     * @param complaintUpheld 投诉是否成立
+     * @notice 验证地址数组中是否有重复地址
      */
-    function _processValidatorRewards(
-        uint256 caseId,
-        address[] calldata validators,
-        DataStructures.VoteChoice[] calldata choices,
-        bool complaintUpheld
-    ) internal {
-        for (uint256 i = 0; i < validators.length; i++) {
-            address validator = validators[i];
-            DataStructures.VoteChoice choice = choices[i];
-
-            // 判断验证者投票是否正确
-            bool votedCorrectly = false;
-            if (
-                complaintUpheld &&
-                choice == DataStructures.VoteChoice.SUPPORT_COMPLAINT
-            ) {
-                votedCorrectly = true;
-            } else if (
-                !complaintUpheld &&
-            choice == DataStructures.VoteChoice.REJECT_COMPLAINT
-            ) {
-                votedCorrectly = true;
-            }
-
-            // 更新验证者诚信状态和奖惩状态
-            DataStructures.UserStatus storage status = userStatuses[validator];
-
-            if (votedCorrectly) {
-                // 投票正确，诚实，获得奖励
-                // Note: Removed integrity and rewardPunishment field access as they don't exist in UserStatus
-
-                // 计算奖励金额（基础奖励）
-                uint256 rewardAmount = _calculateValidatorReward(validator);
-
-                // 记录个人奖励
-                RewardPunishmentRecord storage record = caseRewards[caseId];
-                record.personalRewards[validator] = PersonalReward({
-                    amount: rewardAmount,
-                    reason: "Correct validation",
-                    claimed: false
-                });
-
-                record.rewardRecipients.push(validator);
-                
-                // 溢出检测：防止奖励金额计算溢出
-                if (record.totalRewardAmount + rewardAmount < record.totalRewardAmount) {
-                    emit Events.SystemAnomalyWarning(
-                        "REWARD_SYSTEM",
-                        "Total reward amount overflow detected",
-                        4, // 高严重程度
-                        address(this),
-                        abi.encode(caseId, validator, rewardAmount, record.totalRewardAmount),
-                        block.timestamp
-                    );
-                    // 使用安全加法，限制在最大值
-                    record.totalRewardAmount = type(uint256).max;
-                } else {
-                    record.totalRewardAmount += rewardAmount;
+    function _validateNoDuplicateAddresses(
+        address[] memory complainantRewards,
+        address[] memory enterpriseRewards,
+        address[] memory daoRewards,
+        address[] memory complainantPunishments,
+        address[] memory enterprisePunishments,
+        address[] memory daoPunishments
+    ) internal pure {
+        // 检查各个数组内部是否有重复
+        _checkArrayDuplicates(complainantRewards, "complainant rewards");
+        _checkArrayDuplicates(enterpriseRewards, "enterprise rewards");
+        _checkArrayDuplicates(daoRewards, "dao rewards");
+        _checkArrayDuplicates(complainantPunishments, "complainant punishments");
+        _checkArrayDuplicates(enterprisePunishments, "enterprise punishments");
+        _checkArrayDuplicates(daoPunishments, "dao punishments");
+        
+        // 检查跨数组的重复
+        _checkCrossArrayDuplicates(
+            complainantRewards, enterpriseRewards, daoRewards,
+            complainantPunishments, enterprisePunishments, daoPunishments
+        );
+    }
+    
+    /**
+     * @notice 检查单个数组内是否有重复地址
+     */
+    function _checkArrayDuplicates(address[] memory addresses, string memory arrayName) internal pure {
+        for (uint256 i = 0; i < addresses.length; i++) {
+            for (uint256 j = i + 1; j < addresses.length; j++) {
+                if (addresses[i] == addresses[j] && addresses[i] != address(0)) {
+                    revert Errors.DuplicateOperation(addresses[i], arrayName);
                 }
-                
-                // 用户总奖励溢出检测
-                if (totalUserRewards[validator] + rewardAmount < totalUserRewards[validator]) {
-                    emit Events.SystemAnomalyWarning(
-                        "REWARD_SYSTEM", 
-                        "User total rewards overflow detected",
-                        4,
-                        address(this),
-                        abi.encode(validator, rewardAmount, totalUserRewards[validator]),
-                        block.timestamp
-                    );
-                    totalUserRewards[validator] = type(uint256).max;
-                } else {
-                    totalUserRewards[validator] += rewardAmount;
-                }
-
-                emit Events.UserIntegrityStatusUpdated(
-                    caseId,
-                    validator,
-                    uint8(DataStructures.IntegrityStatus.DISHONEST), // 假设之前状态
-                    uint8(DataStructures.IntegrityStatus.HONEST),
-                    uint8(DataStructures.RewardPunishmentStatus.REWARD),
-                    block.timestamp
-                );
-            } else {
-                // 投票错误，不诚实，接受惩罚
-                // Note: Removed integrity and rewardPunishment field access as they don't exist in UserStatus
-
-                // 计算惩罚金额
-                uint256 punishmentAmount = _calculateValidatorPunishment(
-                    validator
-                );
-
-                // 记录个人惩罚
-                RewardPunishmentRecord storage record = caseRewards[caseId];
-                record.personalPunishments[validator] = PersonalPunishment({
-                    amount: punishmentAmount,
-                    reason: "Incorrect validation",
-                    executed: false
-                });
-
-                record.punishmentTargets.push(validator);
-                record.totalPunishmentAmount += punishmentAmount;
-                totalUserPunishments[validator] += punishmentAmount;
-
-                emit Events.UserIntegrityStatusUpdated(
-                    caseId,
-                    validator,
-                    uint8(DataStructures.IntegrityStatus.HONEST), // 假设之前状态
-                    uint8(DataStructures.IntegrityStatus.DISHONEST),
-                    uint8(DataStructures.RewardPunishmentStatus.PUNISHMENT),
-                    block.timestamp
-                );
             }
-
-            // 更新验证者统计
-            status.participationCount++;
-            status.isActive = true;
-            status.lastActiveTime = block.timestamp;
         }
     }
-
+    
     /**
-     * @notice 处理质疑者奖惩
-     * @param caseId 案件ID
-     * @param challengers 质疑者数组
-     * @param successResults 质疑是否成功数组
+     * @notice 检查跨数组的重复地址
      */
-    function _processChallengerRewards(
-        uint256 caseId,
-        address[] calldata challengers,
-        bool[] calldata successResults
-    ) internal {
-        for (uint256 i = 0; i < challengers.length; i++) {
-            address challenger = challengers[i];
-            bool successful = successResults[i];
-
-            DataStructures.UserStatus storage status = userStatuses[challenger];
-
-            if (successful) {
-                // 质疑成功，诚实，获得奖励
-                // Note: Tracking integrity status through events instead of struct fields
-
-                uint256 rewardAmount = _calculateChallengerReward(challenger);
-
-                RewardPunishmentRecord storage record = caseRewards[caseId];
-                record.personalRewards[challenger] = PersonalReward({
-                    amount: rewardAmount,
-                    reason: "Successful challenge",
-                    claimed: false
-                });
-
-                record.rewardRecipients.push(challenger);
-                record.totalRewardAmount += rewardAmount;
-                totalUserRewards[challenger] += rewardAmount;
-            } else {
-                // 质疑失败，不诚实，接受惩罚
-                status.integrity = DataStructures.IntegrityStatus.DISHONEST;
-                status.rewardPunishment = DataStructures
-                    .RewardPunishmentStatus
-                    .PUNISHMENT;
-
-                uint256 punishmentAmount = _calculateChallengerPunishment(
-                    challenger
-                );
-
-                RewardPunishmentRecord storage record = caseRewards[caseId];
-                record.personalPunishments[challenger] = PersonalPunishment({
-                    amount: punishmentAmount,
-                    reason: "Failed challenge",
-                    executed: false
-                });
-
-                record.punishmentTargets.push(challenger);
-                record.totalPunishmentAmount += punishmentAmount;
-                totalUserPunishments[challenger] += punishmentAmount;
-            }
-
-            emit Events.UserIntegrityStatusUpdated(
-                caseId,
-                challenger,
-                uint8(DataStructures.IntegrityStatus.HONEST), // 简化处理
-                uint8(status.integrity),
-                uint8(status.rewardPunishment),
-                block.timestamp
-            );
-        }
-    }
-
-    /**
-     * @notice 处理投诉者和企业奖惩
-     * @param caseId 案件ID
-     * @param complainant 投诉者地址
-     * @param enterprise 企业地址
-     * @param complaintUpheld 投诉是否成立
-     * @param riskLevel 风险等级
-     */
-    function _processComplainantEnterpriseRewards(
-        uint256 caseId,
-        address complainant,
-        address enterprise,
-        bool complaintUpheld,
-        DataStructures.RiskLevel riskLevel
-    ) internal {
-        RewardPunishmentRecord storage record = caseRewards[caseId];
-
-        if (complaintUpheld) {
-            // 投诉成立，企业败诉
-
-            // 投诉者获得赔偿
-            DataStructures.UserStatus storage complainantStatus = userStatuses[
-                        complainant
-                ];
-            complainantStatus.integrity = DataStructures.IntegrityStatus.HONEST;
-            complainantStatus.rewardPunishment = DataStructures
-                .RewardPunishmentStatus
-                .REWARD;
-
-            uint256 compensationAmount = _calculateCompensation(riskLevel);
-
-            record.personalRewards[complainant] = PersonalReward({
-                amount: compensationAmount,
-                reason: "Complaint upheld compensation",
-                claimed: false
-            });
-
-            record.rewardRecipients.push(complainant);
-            record.totalRewardAmount += compensationAmount;
-            totalUserRewards[complainant] += compensationAmount;
-
-            // 企业接受惩罚
-            DataStructures.UserStatus storage enterpriseStatus = userStatuses[
-                        enterprise
-                ];
-            enterpriseStatus.integrity = DataStructures
-                .IntegrityStatus
-                .DISHONEST;
-            enterpriseStatus.rewardPunishment = DataStructures
-                .RewardPunishmentStatus
-                .PUNISHMENT;
-
-            uint256 enterprisePenalty = _calculateEnterprisePenalty(riskLevel);
-
-            record.personalPunishments[enterprise] = PersonalPunishment({
-                amount: enterprisePenalty,
-                reason: "Food safety violation",
-                executed: false
-            });
-
-            record.punishmentTargets.push(enterprise);
-            record.totalPunishmentAmount += enterprisePenalty;
-            totalUserPunishments[enterprise] += enterprisePenalty;
-        } else {
-            // 投诉失败，投诉者败诉
-
-            // 投诉者接受惩罚（虚假投诉）
-            DataStructures.UserStatus storage complainantStatus = userStatuses[
-                        complainant
-                ];
-            complainantStatus.integrity = DataStructures
-                .IntegrityStatus
-                .DISHONEST;
-            complainantStatus.rewardPunishment = DataStructures
-                .RewardPunishmentStatus
-                .PUNISHMENT;
-
-            uint256 falseComplaintPenalty = _calculateFalseComplaintPenalty(
-                riskLevel
-            );
-
-            record.personalPunishments[complainant] = PersonalPunishment({
-                amount: falseComplaintPenalty,
-                reason: "False complaint",
-                executed: false
-            });
-
-            record.punishmentTargets.push(complainant);
-            record.totalPunishmentAmount += falseComplaintPenalty;
-            totalUserPunishments[complainant] += falseComplaintPenalty;
-
-            // 企业声誉恢复
-            DataStructures.UserStatus storage enterpriseStatus = userStatuses[
-                        enterprise
-                ];
-            enterpriseStatus.integrity = DataStructures.IntegrityStatus.HONEST;
-            enterpriseStatus.rewardPunishment = DataStructures
-                .RewardPunishmentStatus
-                .REWARD;
-
-            // 企业可能获得少量补偿
-            uint256 reputationCompensation = _calculateReputationCompensation();
-
-            if (reputationCompensation > 0) {
-                record.personalRewards[enterprise] = PersonalReward({
-                    amount: reputationCompensation,
-                    reason: "Reputation restoration",
-                    claimed: false
-                });
-
-                record.rewardRecipients.push(enterprise);
-                record.totalRewardAmount += reputationCompensation;
-                totalUserRewards[enterprise] += reputationCompensation;
+    function _checkCrossArrayDuplicates(
+        address[] memory complainantRewards,
+        address[] memory enterpriseRewards,
+        address[] memory daoRewards,
+        address[] memory complainantPunishments,
+        address[] memory enterprisePunishments,
+        address[] memory daoPunishments
+    ) internal pure {
+        address[][] memory allArrays = new address[][](6);
+        allArrays[0] = complainantRewards;
+        allArrays[1] = enterpriseRewards;
+        allArrays[2] = daoRewards;
+        allArrays[3] = complainantPunishments;
+        allArrays[4] = enterprisePunishments;
+        allArrays[5] = daoPunishments;
+        
+        for (uint256 i = 0; i < allArrays.length; i++) {
+            for (uint256 j = i + 1; j < allArrays.length; j++) {
+                for (uint256 k = 0; k < allArrays[i].length; k++) {
+                    for (uint256 l = 0; l < allArrays[j].length; l++) {
+                        if (allArrays[i][k] == allArrays[j][l] && allArrays[i][k] != address(0)) {
+                            revert Errors.DuplicateOperation(allArrays[i][k], "cross-array duplicate");
+                        }
+                    }
+                }
             }
         }
     }
 
     // ==================== 奖惩计算辅助函数 ====================
-
-    /**
-     * @notice 计算验证者奖励
-     * @dev 验证者奖励算法 - 基础奖励 + 声誉加成
-     * 设计原理：
-     * 1. 基础奖励：0.01 ETH，保证所有正确参与者都有基本收益
-     * 2. 声誉加成：声誉分数/1000 * 基础奖励，激励长期良好表现
-     * 例如：声誉800分的验证者奖励 = 0.01 + (800/1000 * 0.01) = 0.018 ETH
-     * @param validator 验证者地址
-     * @return 计算得出的奖励金额
-     */
-    function _calculateValidatorReward(
-        address validator
-    ) internal view returns (uint256) {
-        DataStructures.UserStatus storage status = userStatuses[validator];
-
-        // 基础奖励：0.01 ETH
-        // 设定原则：足以覆盖参与成本，激励用户积极参与
-        uint256 baseReward = 0.01 ether;
-
-        // 声誉加成算法：(声誉分数 / 1000) * 基础奖励
-        // 设计目的：奖励历史表现良好的验证者，建立长期激励机制
-        // 最高加成：满分1000分可获得100%加成（翻倍奖励）
-        uint256 reputationBonus = (status.reputationScore * baseReward) / 1000;
-
-        return baseReward + reputationBonus;
-    }
-
-    /**
-     * @notice 计算验证者惩罚
-     * @dev 验证者惩罚算法 - 固定基础惩罚
-     * 设计原理：
-     * 1. 固定惩罚0.005 ETH：惩罚金额约为基础奖励的50%
-     * 2. 适度惩罚：既要有威慑作用，又不能过于严厉
-     * 3. 不考虑声誉：避免对新用户过度惩罚，给予改正机会
-     * @param validator 验证者地址（当前版本未使用，为未来扩展预留）
-     * @return 固定的惩罚金额
-     */
-    function _calculateValidatorPunishment(
-        address validator
-    ) internal view returns (uint256) {
-        // 基础惩罚：0.005 ETH
-        // 惩罚/奖励比例 = 1:2，保证正确参与仍有净收益
-        uint256 basePunishment = 0.005 ether;
-
-        return basePunishment;
-    }
-
-    /**
-     * @notice 计算质疑者奖励
-     * @dev 质疑者奖励算法 - 高于验证者的固定奖励
-     * 设计原理：
-     * 1. 0.02 ETH奖励：是验证者基础奖励的2倍
-     * 2. 高风险高回报：质疑需要承担更大风险，给予更高奖励
-     * 3. 激励监督：鼓励用户对投票结果进行质疑和监督
-     * @param challenger 质疑者地址（当前版本未使用，为未来扩展预留）
-     * @return 固定的质疑者奖励金额
-     */
-    function _calculateChallengerReward(
-        address challenger
-    ) internal pure returns (uint256) {
-        // 质疑者奖励：0.02 ETH
-        // 设计逻辑：质疑行为风险更高，需要更仔细的分析和更大的勇气
-        return 0.02 ether;
-    }
-
-    /**
-     * @notice 计算质疑者惩罚
-     * @dev 质疑者惩罚算法 - 适中的固定惩罚
-     * 设计原理：
-     * 1. 0.01 ETH惩罚：等于验证者基础奖励
-     * 2. 平衡设计：既要防止恶意质疑，又要鼓励合理质疑
-     * 3. 惩罚/奖励比例 = 1:2，保证成功质疑的净收益
-     * @param challenger 质疑者地址（当前版本未使用，为未来扩展预留）
-     * @return 固定的质疑者惩罚金额
-     */
-    function _calculateChallengerPunishment(
-        address challenger
-    ) internal pure returns (uint256) {
-        // 失败质疑的惩罚：0.01 ETH
-        // 惩罚理由：恶意或轻率的质疑会浪费系统资源
-        return 0.01 ether;
-    }
-
-    /**
-     * @notice 计算赔偿金额
-     * @dev 投诉者赔偿算法 - 根据风险等级分级赔偿
-     * 设计原理：
-     * 1. 分级赔偿：高风险1 ETH，中风险0.5 ETH，低风险0.1 ETH
-     * 2. 风险对应：赔偿金额与食品安全风险等级成正比
-     * 3. 激励机制：鼓励用户举报高风险问题
-     * @param riskLevel 案件风险等级
-     * @return 根据风险等级计算的赔偿金额
-     */
-    function _calculateCompensation(
-        DataStructures.RiskLevel riskLevel
-    ) internal pure returns (uint256) {
-        if (riskLevel == DataStructures.RiskLevel.HIGH) {
-            return 1 ether; // 高风险：1 ETH，涉及严重健康威胁
-        } else if (riskLevel == DataStructures.RiskLevel.MEDIUM) {
-            return 0.5 ether; // 中风险：0.5 ETH，涉及一般健康问题
-        } else {
-            return 0.1 ether; // 低风险：0.1 ETH，涉及轻微问题
-        }
-    }
-
-    /**
-     * @notice 计算企业惩罚
-     * @dev 企业惩罚算法 - 根据风险等级的严厉惩罚
-     * 设计原理：
-     * 1. 重罚机制：高风险5 ETH，中风险2 ETH，低风险0.5 ETH
-     * 2. 威慑作用：企业惩罚远高于个人，体现企业责任
-     * 3. 风险比例：企业惩罚是投诉者赔偿的5倍，确保违法成本
-     * @param riskLevel 案件风险等级
-     * @return 根据风险等级计算的企业惩罚金额
-     */
-    function _calculateEnterprisePenalty(
-        DataStructures.RiskLevel riskLevel
-    ) internal pure returns (uint256) {
-        if (riskLevel == DataStructures.RiskLevel.HIGH) {
-            return 5 ether; // 高风险：5 ETH，严重食品安全问题的重罚
-        } else if (riskLevel == DataStructures.RiskLevel.MEDIUM) {
-            return 2 ether; // 中风险：2 ETH，一般食品安全问题的惩罚
-        } else {
-            return 0.5 ether; // 低风险：0.5 ETH，轻微问题的处罚
-        }
-    }
-
-    /**
-     * @notice 计算虚假投诉惩罚
-     * @dev 虚假投诉惩罚算法 - 根据声称风险等级的适度惩罚
-     * 设计原理：
-     * 1. 适度惩罚：防止恶意投诉，但不过分严厉
-     * 2. 风险关联：声称的风险越高，虚假投诉的惩罚越重
-     * 3. 比例合理：约为企业惩罚的10%，体现过错程度差异
-     * @param riskLevel 投诉声称的风险等级
-     * @return 根据声称风险等级计算的虚假投诉惩罚金额
-     */
-    function _calculateFalseComplaintPenalty(
-        DataStructures.RiskLevel riskLevel
-    ) internal pure returns (uint256) {
-        if (riskLevel == DataStructures.RiskLevel.HIGH) {
-            return 0.5 ether; // 虚假高风险投诉：0.5 ETH
-        } else if (riskLevel == DataStructures.RiskLevel.MEDIUM) {
-            return 0.2 ether; // 虚假中风险投诉：0.2 ETH
-        } else {
-            return 0.05 ether; // 虚假低风险投诉：0.05 ETH
-        }
-    }
-
-    /**
-     * @notice 计算声誉恢复补偿
-     * @dev 企业声誉恢复补偿算法 - 固定的象征性补偿
-     * 设计原理：
-     * 1. 象征性补偿：0.05 ETH，主要起到声誉恢复的象征意义
-     * 2. 公平原则：企业被错误指控时应得到一定补偿
-     * 3. 适度金额：不会造成系统负担，但体现公正性
-     * @return 固定的声誉恢复补偿金额
-     */
-    function _calculateReputationCompensation()
-    internal
-    pure
-    returns (uint256)
-    {
-        // 声誉恢复补偿：0.05 ETH
-        // 目的：对被错误指控企业的象征性补偿
-        return 0.05 ether;
-    }
 
     // ==================== 查询函数 ====================
 
