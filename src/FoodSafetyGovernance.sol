@@ -200,7 +200,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         // 在资金管理合约中注册用户保证金
         fundManager.registerUserDeposit{value: msg.value}(
             msg.sender,
-            msg.value
+            msg.value,
+            DataStructures.UserRole.COMPLAINANT
         );
 
         emit Events.UserRegistered(
@@ -225,7 +226,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         if (msg.value < config.minEnterpriseDeposit) {
             revert Errors.InsufficientEnterpriseDeposit(
                 msg.value,
-                config.minEnterpriseDeposit
+                config.minEnterpriseDeposit,
+                DataStructures.UserRole.ENTERPRISE
             );
         }
 
@@ -270,7 +272,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         // 在资金管理合约中注册DAO保证金
         fundManager.registerUserDeposit{value: msg.value}(
             msg.sender,
-            msg.value
+            msg.value,
+            DataStructures.UserRole.DAO_MEMBER
         );
 
         emit Events.UserRegistered(

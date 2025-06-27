@@ -63,6 +63,9 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
     /// @dev 用于动态保证金计算，避免跨合约调用的gas消耗
     mapping(address => uint256) public userReputation;
 
+    /// @notice 用户角色映射 - 记录用户的角色
+    mapping(address => DataStructures.UserRole) public userRole;
+
     /// @notice 系统常量定义 - 规定系统运行的基本限制
     uint256 public constant MIN_DEPOSIT = 0.01 ether; // 最小保证金：0.01 ETH
     uint256 public constant MAX_DEPOSIT = 100 ether; // 最大保证金：100 ETH
@@ -900,7 +903,8 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
      */
     function registerUserDeposit(
         address user,
-        uint256 amount
+        uint256 amount,
+        DataStructures.UserRole role
     )
     external
     payable
@@ -930,6 +934,9 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         // 更新用户状态
         _updateUserStatus(user);
 
+        // 更新角色映射
+        userRole[user] = role;
+
         emit Events.DepositMade(
             user,
             amount,
@@ -943,5 +950,9 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
      */
     receive() external payable {
         _addToFundPool(msg.value, "Direct deposit");
+    }
+
+    function hasUserRole(address user, DataStructures.UserRole role) external view returns (bool) {
+        return userRole[user] == role;
     }
 }

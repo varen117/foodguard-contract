@@ -296,5 +296,11 @@ library DataStructures {
         bool operationRestricted;       // 是否限制操作 - 因保证金不足而限制某些操作
     }
 
+    enum UserRole {
+        COMPLAINANT, // 投诉者 - 发起投诉的用户
+        ENTERPRISE, // 企业 - 被投诉的企业
+        DAO_MEMBER // DAO成员 - 参与DAO治理的用户
+    }
+
 
 }
