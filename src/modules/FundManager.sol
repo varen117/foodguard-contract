@@ -66,7 +66,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
 
     /// @notice 系统常量定义 - 规定系统运行的基本限制
     uint256 public constant MIN_DEPOSIT = 0.01 ether; // 最小保证金：0.01 ETH
-    uint256 public constant MAX_DEPOSIT = 100 ether; // 最大保证金：100 ETH
     uint256 public constant MAX_CONCURRENT_CASES = 10; // 最大并发案件数：10个
     uint256 public constant LIQUIDATION_PENALTY_RATE = 10; // 清算罚金比例：10%
 
@@ -492,8 +491,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         }
     }
 
-
-
     // ==================== 保证金管理函数 ====================
 
     /**
@@ -505,13 +502,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         }
 
         DataStructures.UserDepositProfile storage profile = userProfiles[msg.sender];
-
-        if (profile.totalDeposit + msg.value > MAX_DEPOSIT) {
-            revert Errors.InvalidAmount(
-                profile.totalDeposit + msg.value,
-                MAX_DEPOSIT
-            );
-        }
 
         profile.totalDeposit += msg.value;
 
@@ -656,6 +646,37 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
             caseId,
             user,
             frozenAmount,
+            block.timestamp
+        );
+    }
+
+    /**
+     * @notice 将奖励添加到用户保证金余额
+     * @dev 由RewardPunishmentManager调用，将奖励直接添加到用户的保证金余额中
+     * @param user 用户地址
+     * @param amount 奖励金额
+     */
+    function addRewardToDeposit(
+        address user,
+        uint256 amount
+    ) external onlyRole(OPERATOR_ROLE) whenNotPaused notZeroAddress(user) {
+        if (amount == 0) {
+            revert Errors.InvalidAmount(amount, 1);
+        }
+
+        DataStructures.UserDepositProfile storage profile = userProfiles[user];
+
+        // 将奖励添加到用户保证金余额
+        profile.totalDeposit += amount;
+
+        // 更新用户状态
+        _updateUserStatus(user);
+
+        // 发出奖励添加事件
+        emit Events.DepositMade(
+            user,
+            amount,
+            profile.totalDeposit,
             block.timestamp
         );
     }
@@ -825,8 +846,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         return dynamicConfig;
     }
 
-
-
     // ==================== 管理函数 ====================
 
     /**
@@ -885,13 +904,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         }
 
         DataStructures.UserDepositProfile storage profile = userProfiles[user];
-
-        if (profile.totalDeposit + amount > MAX_DEPOSIT) {
-            revert Errors.InvalidAmount(
-                profile.totalDeposit + amount,
-                MAX_DEPOSIT
-            );
-        }
 
         profile.totalDeposit += amount;
 
