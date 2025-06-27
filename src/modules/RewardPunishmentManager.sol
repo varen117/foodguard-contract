@@ -8,6 +8,20 @@ import "../libraries/CommonModifiers.sol";
 import "@openzeppelin/contracts/access/Ownable.sol"; // 导入所有权控制
 
 /**
+ * @notice 资金管理合约接口
+ */
+interface IFundManager {
+    function getSystemConfig() external view returns (DataStructures.SystemConfig memory);
+
+    // todo 添加函数
+    function addRewardToDeposit(address user, uint256 amount) external;
+
+    function addToFundPool(uint256 amount, string memory source) external;
+
+    function getCaseFrozenDeposit(uint256 caseId, address user) external view returns (uint256);
+}
+
+/**
  * @title RewardPunishmentManager
  * @author Food Safety Governance Team
  * @notice 奖惩管理模块，负责根据投票和质疑结果计算和分配奖励与惩罚
@@ -68,10 +82,10 @@ contract RewardPunishmentManager is Ownable {
         mapping(address => PersonalReward) personalRewards; // 个人奖励详情
         mapping(address => PersonalPunishment) personalPunishments; // 个人惩罚详情
         // 参与者列表 - 便于遍历和统计
-        address[] complainantRewardRecipients; // 获得补偿的投诉用户列表
-        address[] complainantPunishmentTargets; // 获得惩罚的投诉用户列表
-        address[] enterpriseRewardRecipients; // 获得奖励的企业用户列表
-        address[] enterprisePunishmentTargets; // 获得惩罚的企业用户列表
+        address complainantRewardRecipient; // 获得补偿的投诉用户
+        address complainantPunishmentTarget; // 获得惩罚的投诉用户
+        address enterpriseRewardRecipients; // 获得奖励的企业用户列表
+        address enterprisePunishmentTargets; // 获得惩罚的企业用户列表
         address[] daoRewardRecipients; // 获得奖励的dao用户列表
         address[] daoRewardPunishmentTargets;//获得惩罚的dao用户列表
     }
@@ -144,11 +158,11 @@ contract RewardPunishmentManager is Ownable {
      */
     function processCaseRewardPunishment(
         uint256 caseId,
-        address[] memory complainantRewards,
-        address[] memory enterpriseRewards,
+        address complainantRewards,
+        address enterpriseRewards,
         address[] memory daoRewards,
-        address[] memory complainantPunishments,
-        address[] memory enterprisePunishments,
+        address complainantPunishments,
+        address enterprisePunishments,
         address[] memory daoPunishments,
         bool complaintUpheld,
         DataStructures.RiskLevel riskLevel
@@ -157,25 +171,19 @@ contract RewardPunishmentManager is Ownable {
         if (record.isProcessed) {
             revert Errors.RewardPunishmentAlreadyProcessed(caseId);
         }
-        if (complainantRewards.length == 0 &&
-        enterpriseRewards.length == 0 &&
+        if (complainantRewards == address(0) &&
+        enterpriseRewards == address(0) &&
         daoRewards.length == 0 &&
-        complainantPunishments.length == 0 &&
-        enterprisePunishments.length == 0 &&
+        complainantPunishments == address(0) &&
+        enterprisePunishments == address(0) &&
             daoPunishments.length == 0) {
             revert Errors.NoRewardOrPunishmentMembers("No Reward or Punishment Members");
         }
 
-        // 检查重复地址
-        _validateNoDuplicateAddresses(
-            complainantRewards, enterpriseRewards, daoRewards,
-            complainantPunishments, enterprisePunishments, daoPunishments
-        );
-
         // 创建奖惩记录
         record.caseId = caseId;
-        record.complainantRewardRecipients = complainantRewards;
-        record.complainantPunishmentTargets = complainantPunishments;
+        record.complainantRewardRecipient = complainantRewards;
+        record.complainantPunishmentTarget = complainantPunishments;
         record.enterpriseRewardRecipients = enterpriseRewards;
         record.enterprisePunishmentTargets = enterprisePunishments;
         record.daoRewardRecipients = daoRewards;
@@ -188,10 +196,17 @@ contract RewardPunishmentManager is Ownable {
         record.processTime = block.timestamp;
         record.isProcessed = false;
 
+        // 获取系统配置和用户接口
+        IFundManager fundManagerContract = IFundManager(fundManager);
+
         // 计算总奖励金额和总惩罚金额
+        _calculateTotalAmounts(record, fundManagerContract);
 
+        // 分配奖励和惩罚
+        _allocateRewardsAndPunishments(record, fundManagerContract);
 
-
+        // 发放奖励到用户保证金
+        _distributeRewardsToDeposits(record, fundManagerContract);
 
         emit Events.RewardPunishmentCalculationStarted(
             caseId,
@@ -199,86 +214,398 @@ contract RewardPunishmentManager is Ownable {
             block.timestamp
         );
 
-
-
-
         // 标记案件已处理
         caseProcessed[caseId] = true;
         record.isProcessed = true;
     }
 
     /**
-     * @notice 验证地址数组中是否有重复地址
+     * @notice 计算总奖励金额和总惩罚金额
      */
-    function _validateNoDuplicateAddresses(
-        address[] memory complainantRewards,
-        address[] memory enterpriseRewards,
-        address[] memory daoRewards,
-        address[] memory complainantPunishments,
-        address[] memory enterprisePunishments,
-        address[] memory daoPunishments
-    ) internal pure {
-        // 检查各个数组内部是否有重复
-        _checkArrayDuplicates(complainantRewards, "complainant rewards");
-        _checkArrayDuplicates(enterpriseRewards, "enterprise rewards");
-        _checkArrayDuplicates(daoRewards, "dao rewards");
-        _checkArrayDuplicates(complainantPunishments, "complainant punishments");
-        _checkArrayDuplicates(enterprisePunishments, "enterprise punishments");
-        _checkArrayDuplicates(daoPunishments, "dao punishments");
-        
-        // 检查跨数组的重复
-        _checkCrossArrayDuplicates(
-            complainantRewards, enterpriseRewards, daoRewards,
-            complainantPunishments, enterprisePunishments, daoPunishments
-        );
-    }
-    
-    /**
-     * @notice 检查单个数组内是否有重复地址
-     */
-    function _checkArrayDuplicates(address[] memory addresses, string memory arrayName) internal pure {
-        for (uint256 i = 0; i < addresses.length; i++) {
-            for (uint256 j = i + 1; j < addresses.length; j++) {
-                if (addresses[i] == addresses[j] && addresses[i] != address(0)) {
-                    revert Errors.DuplicateOperation(addresses[i], arrayName);
-                }
+    function _calculateTotalAmounts(
+        RewardPunishmentRecord storage record,
+        IFundManager fundManagerContract
+    ) internal {
+        // 获取系统配置
+        DataStructures.SystemConfig memory config = fundManagerContract.getSystemConfig();
+
+        // 根据风险等级确定惩罚比例
+        uint256 punishmentRate;
+        if (record.riskLevel == DataStructures.RiskLevel.HIGH) {
+            punishmentRate = 100; // 高风险：100%的保证金作为惩罚
+        } else if (record.riskLevel == DataStructures.RiskLevel.MEDIUM) {
+            punishmentRate = 50;  // 中风险：50%的保证金作为惩罚
+        } else {
+            punishmentRate = 20;  // 低风险：20%的保证金作为惩罚
+        }
+
+        // 计算总惩罚金额
+        uint256 totalPunishments = 0;
+
+        // 计算DAO成员惩罚金额（验证者和质疑者）
+        for (uint256 i = 0; i < record.daoRewardPunishmentTargets.length; i++) {
+            uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.daoRewardPunishmentTargets[i]);
+            totalPunishments += (userDeposit * punishmentRate) / 100;
+        }
+
+        if (record.complaintUpheld) {
+            // 投诉成立：企业受惩罚
+            if (record.enterprisePunishmentTargets != address(0)) {
+                uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.enterprisePunishmentTargets);
+                totalPunishments += (userDeposit * punishmentRate) / 100;
+            }
+        } else {
+            // 投诉不成立：投诉者受惩罚
+            if (record.complainantPunishmentTarget != address(0)) {
+                uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.complainantPunishmentTarget);
+                totalPunishments += (userDeposit * punishmentRate) / 100;
             }
         }
+
+        record.totalPunishmentAmount = totalPunishments;
+
+        // 计算可用于奖励的金额
+        uint256 availableRewardAmount;
+        if (record.complaintUpheld) {
+            // 投诉成立：totalPunishments的80%用于奖励金额，20%存入基金库
+            availableRewardAmount = (totalPunishments * 80) / 100;
+        } else {
+            // 投诉不成立：全部惩罚金额用于奖励
+            availableRewardAmount = totalPunishments;
+        }
+
+        record.totalRewardAmount = availableRewardAmount;
     }
-    
+
     /**
-     * @notice 检查跨数组的重复地址
+     * @notice 分配奖励和惩罚
      */
-    function _checkCrossArrayDuplicates(
-        address[] memory complainantRewards,
-        address[] memory enterpriseRewards,
-        address[] memory daoRewards,
-        address[] memory complainantPunishments,
-        address[] memory enterprisePunishments,
-        address[] memory daoPunishments
-    ) internal pure {
-        address[][] memory allArrays = new address[][](6);
-        allArrays[0] = complainantRewards;
-        allArrays[1] = enterpriseRewards;
-        allArrays[2] = daoRewards;
-        allArrays[3] = complainantPunishments;
-        allArrays[4] = enterprisePunishments;
-        allArrays[5] = daoPunishments;
-        
-        for (uint256 i = 0; i < allArrays.length; i++) {
-            for (uint256 j = i + 1; j < allArrays.length; j++) {
-                for (uint256 k = 0; k < allArrays[i].length; k++) {
-                    for (uint256 l = 0; l < allArrays[j].length; l++) {
-                        if (allArrays[i][k] == allArrays[j][l] && allArrays[i][k] != address(0)) {
-                            revert Errors.DuplicateOperation(allArrays[i][k], "cross-array duplicate");
-                        }
-                    }
-                }
+    function _allocateRewardsAndPunishments(
+        RewardPunishmentRecord storage record,
+        IFundManager fundManagerContract
+    ) internal {
+        // 获取系统配置
+        DataStructures.SystemConfig memory config = fundManagerContract.getSystemConfig();
+
+        // 计算各角色的奖励权重（基于最小保证金）
+        uint256 complainantWeight = config.minComplaintDeposit;
+        uint256 enterpriseWeight = config.minEnterpriseDeposit;
+        uint256 daoWeight = config.minDaoDeposit;
+
+        // 计算总权重
+        uint256 totalRewardRecipients = (record.complainantRewardRecipient != address(0) ? 1 : 0) +
+                                       (record.enterpriseRewardRecipients != address(0) ? 1 : 0) +
+                                       record.daoRewardRecipients.length;
+
+        if (totalRewardRecipients > 0) {
+            uint256 totalWeight = (record.complainantRewardRecipient != address(0) ? complainantWeight : 0) +
+                                 (record.enterpriseRewardRecipients != address(0) ? enterpriseWeight : 0) +
+                                 record.daoRewardRecipients.length * daoWeight;
+
+            // 分配投诉者奖励（如果有）
+            if (record.complainantRewardRecipient != address(0)) {
+                uint256 complainantRewardAmount = (record.totalRewardAmount * complainantWeight) / totalWeight;
+                record.personalRewards[record.complainantRewardRecipient] = PersonalReward({
+                    amount: complainantRewardAmount,
+                    reason: "Complaint reward",
+                    claimed: false
+                });
             }
+
+            // 分配企业奖励（如果有）
+            if (record.enterpriseRewardRecipients != address(0)) {
+                uint256 enterpriseRewardAmount = (record.totalRewardAmount * enterpriseWeight) / totalWeight;
+                record.personalRewards[record.enterpriseRewardRecipients] = PersonalReward({
+                    amount: enterpriseRewardAmount,
+                    reason: "Enterprise compensation",
+                    claimed: false
+                });
+            }
+
+            // 分配DAO成员奖励
+            _allocateRoleRewards(
+                record.daoRewardRecipients,
+                record,
+                daoWeight,
+                totalWeight,
+                "DAO member reward"
+            );
+        }
+
+        // 分配惩罚 - 根据实际保证金和风险等级计算
+        uint256 punishmentRate;
+        if (record.riskLevel == DataStructures.RiskLevel.HIGH) {
+            punishmentRate = 100; // 高风险：100%的保证金作为惩罚
+        } else if (record.riskLevel == DataStructures.RiskLevel.MEDIUM) {
+            punishmentRate = 50;  // 中风险：50%的保证金作为惩罚
+        } else {
+            punishmentRate = 20;  // 低风险：20%的保证金作为惩罚
+        }
+
+        // 分配投诉者惩罚（如果有）
+        if (record.complainantPunishmentTarget != address(0)) {
+            _allocateSinglePunishment(
+                record.complainantPunishmentTarget,
+                record,
+                punishmentRate,
+                fundManagerContract,
+                "False complaint penalty"
+            );
+        }
+
+        // 分配企业惩罚（如果有）
+        if (record.enterprisePunishmentTargets != address(0)) {
+            _allocateSinglePunishment(
+                record.enterprisePunishmentTargets,
+                record,
+                punishmentRate,
+                fundManagerContract,
+                "Food safety violation penalty"
+            );
+        }
+
+        // 分配DAO成员惩罚
+        _allocateRolePunishmentsByDeposit(
+            record.daoRewardPunishmentTargets,
+            record,
+            punishmentRate,
+            fundManagerContract,
+            "Incorrect validation/challenge penalty"
+        );
+    }
+
+    /**
+     * @notice 为单个地址分配基于保证金的惩罚
+     */
+    function _allocateSinglePunishment(
+        address target,
+        RewardPunishmentRecord storage record,
+        uint256 punishmentRate,
+        IFundManager fundManagerContract,
+        string memory reason
+    ) internal {
+        if (target != address(0)) {
+            uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, target);
+            uint256 punishmentAmount = (userDeposit * punishmentRate) / 100;
+
+            record.personalPunishments[target] = PersonalPunishment({
+                amount: punishmentAmount,
+                reason: reason,
+                executed: false
+            });
         }
     }
 
-    // ==================== 奖惩计算辅助函数 ====================
+    /**
+     * @notice 为多个地址分配基于保证金的惩罚
+     */
+    function _allocateRolePunishmentsByDeposit(
+        address[] memory targets,
+        RewardPunishmentRecord storage record,
+        uint256 punishmentRate,
+        IFundManager fundManagerContract,
+        string memory reason
+    ) internal {
+        for (uint256 i = 0; i < targets.length; i++) {
+            uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, targets[i]);
+            uint256 punishmentAmount = (userDeposit * punishmentRate) / 100;
+
+            record.personalPunishments[targets[i]] = PersonalPunishment({
+                amount: punishmentAmount,
+                reason: reason,
+                executed: false
+            });
+        }
+    }
+
+    /**
+     * @notice 为特定角色分配奖励
+     */
+    function _allocateRoleRewards(
+        address[] memory recipients,
+        RewardPunishmentRecord storage record,
+        uint256 roleWeight,
+        uint256 totalWeight,
+        string memory reason
+    ) internal {
+        if (recipients.length == 0) return;
+
+        uint256 roleRewardAmount = (record.totalRewardAmount * recipients.length * roleWeight) / totalWeight;
+        uint256 individualReward = roleRewardAmount / recipients.length;
+
+        for (uint256 i = 0; i < recipients.length; i++) {
+            record.personalRewards[recipients[i]] = PersonalReward({
+                amount: individualReward,
+                reason: reason,
+                claimed: false
+            });
+        }
+    }
+
+    /**
+     * @notice 发放奖励到用户保证金余额
+     */
+    function _distributeRewardsToDeposits(
+        RewardPunishmentRecord storage record,
+        IFundManager fundManagerContract
+    ) internal {
+        // 发放投诉者奖励（如果有）
+        if (record.complainantRewardRecipient != address(0)) {
+            PersonalReward storage reward = record.personalRewards[record.complainantRewardRecipient];
+
+            if (reward.amount > 0 && !reward.claimed) {
+                // 调用fundManager增加用户保证金
+                fundManagerContract.addRewardToDeposit(record.complainantRewardRecipient, reward.amount);
+
+                // 更新用户统计
+                totalUserRewards[record.complainantRewardRecipient] += reward.amount;
+
+                // 标记为已领取
+                reward.claimed = true;
+
+                // 发送奖励分发事件
+                emit Events.RewardDistributed(
+                    record.caseId,
+                    record.complainantRewardRecipient,
+                    reward.amount,
+                    reward.reason,
+                    block.timestamp
+                );
+            }
+        }
+
+        // 发放企业奖励（如果有）
+        if (record.enterpriseRewardRecipients != address(0)) {
+            PersonalReward storage reward = record.personalRewards[record.enterpriseRewardRecipients];
+
+            if (reward.amount > 0 && !reward.claimed) {
+                // 调用fundManager增加用户保证金
+                fundManagerContract.addRewardToDeposit(record.enterpriseRewardRecipients, reward.amount);
+
+                // 更新用户统计
+                totalUserRewards[record.enterpriseRewardRecipients] += reward.amount;
+
+                // 标记为已领取
+                reward.claimed = true;
+
+                // 发送奖励分发事件
+                emit Events.RewardDistributed(
+                    record.caseId,
+                    record.enterpriseRewardRecipients,
+                    reward.amount,
+                    reward.reason,
+                    block.timestamp
+                );
+            }
+        }
+
+        // 发放DAO成员奖励
+        _distributeRoleRewards(record.daoRewardRecipients, record, fundManagerContract);
+
+        // 执行惩罚
+        _executePunishments(record);
+
+        // 如果投诉成立，将惩罚的20%存入基金库
+        if (record.complaintUpheld) {
+            uint256 toFundPool = (record.totalPunishmentAmount * 20) / 100;
+
+            // 这里应该调用fundManager将资金转入基金库
+            // fundManagerContract.addToFundPool(toFundPool, "Punishment penalty");
+        }
+    }
+
+    /**
+     * @notice 执行惩罚
+     */
+    function _executePunishments(
+        RewardPunishmentRecord storage record
+    ) internal {
+        // 执行投诉者惩罚（如果有）
+        if (record.complainantPunishmentTarget != address(0)) {
+            _executeSinglePunishment(record.complainantPunishmentTarget, record);
+        }
+
+        // 执行企业惩罚（如果有）
+        if (record.enterprisePunishmentTargets != address(0)) {
+            _executeSinglePunishment(record.enterprisePunishmentTargets, record);
+        }
+
+        // 执行DAO成员惩罚
+        _executeRolePunishments(record.daoRewardPunishmentTargets, record);
+    }
+
+    /**
+     * @notice 执行单个地址的惩罚
+     */
+    function _executeSinglePunishment(
+        address target,
+        RewardPunishmentRecord storage record
+    ) internal {
+        PersonalPunishment storage punishment = record.personalPunishments[target];
+
+        if (punishment.amount > 0 && !punishment.executed) {
+            // 更新用户统计
+            totalUserPunishments[target] += punishment.amount;
+
+            // 标记为已执行
+            punishment.executed = true;
+
+            // 发送惩罚执行事件
+            emit Events.PunishmentExecuted(
+                record.caseId,
+                target,
+                punishment.amount,
+                punishment.reason,
+                block.timestamp
+            );
+        }
+    }
+
+    /**
+     * @notice 执行多个地址的惩罚
+     */
+    function _executeRolePunishments(
+        address[] memory targets,
+        RewardPunishmentRecord storage record
+    ) internal {
+        for (uint256 i = 0; i < targets.length; i++) {
+            _executeSinglePunishment(targets[i], record);
+        }
+    }
+
+    /**
+     * @notice 为特定角色分发奖励到保证金
+     */
+    function _distributeRoleRewards(
+        address[] memory recipients,
+        RewardPunishmentRecord storage record,
+        IFundManager fundManagerContract
+    ) internal {
+        for (uint256 i = 0; i < recipients.length; i++) {
+            address recipient = recipients[i];
+            PersonalReward storage reward = record.personalRewards[recipient];
+
+            if (reward.amount > 0 && !reward.claimed) {
+                // 调用fundManager增加用户保证金
+                fundManagerContract.addRewardToDeposit(recipient, reward.amount);
+
+                // 更新用户统计
+                totalUserRewards[recipient] += reward.amount;
+
+                // 标记为已领取
+                reward.claimed = true;
+
+                // 发送奖励分发事件
+                emit Events.RewardDistributed(
+                    record.caseId,
+                    recipient,
+                    reward.amount,
+                    reward.reason,
+                    block.timestamp
+                );
+            }
+        }
+    }
 
     // ==================== 查询函数 ====================
 
