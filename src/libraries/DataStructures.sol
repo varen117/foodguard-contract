@@ -115,6 +115,7 @@ library DataStructures {
         string reason;          // 投票理由：验证者对其判断的详细说明
         string evidenceHash;    // 证据哈希：支持投票决定的证据文件哈希
         bool hasVoted;          // 投票状态：标记该验证者是否已经完成投票
+        VoteChoice finalChoice; // 最终选择：质疑结束后记录的最终投票结果
     }
 
     /**

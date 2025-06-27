@@ -498,7 +498,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         CaseInfo storage caseInfo = cases[caseId];
 
         // 结束质疑期并获取质疑者详细信息
-        (bool finalResult, , , ) = disputeManager.endDisputeSession(caseId);
+        bool finalResult = disputeManager.endDisputeSession(caseId);
 
         // 更新最终结果
         caseInfo.complaintUpheld = finalResult;

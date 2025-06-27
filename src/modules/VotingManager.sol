@@ -149,7 +149,8 @@ contract VotingManager is Ownable, CommonModifiers {
             timestamp: block.timestamp,
             reason: reason,
             evidenceHash: evidenceHash,
-            hasVoted: true
+            hasVoted: true,
+            finalChoice: choice  // 初始时与原始选择相同，质疑期可能会改变
         });
 
         // 更新投票统计
@@ -227,11 +228,37 @@ contract VotingManager is Ownable, CommonModifiers {
     // ==================== 查询函数 ====================
 
     /**
-     * @notice 获取投票会话信息
+     * @notice 获取投票会话信息（分解版本，避免mapping返回）
      */
-    function getVotingSessionInfo(uint256 caseId) external view caseExists(caseId) returns (DataStructures.VotingSession) {
-        return votingSessions[caseId];
+    function getVotingSessionInfo(uint256 caseId) external view caseExists(caseId) returns (
+        uint256 caseId_,
+        address[] memory selectedValidators,
+        uint256 supportVotes,
+        uint256 rejectVotes,
+        uint256 totalVotes,
+        uint256 startTime,
+        uint256 endTime,
+        bool isActive,
+        bool isCompleted,
+        bool complaintUpheld
+    ) {
+        DataStructures.VotingSession storage session = votingSessions[caseId];
+        
+        return (
+            session.caseId,
+            session.selectedValidators,
+            session.supportVotes,
+            session.rejectVotes,
+            session.totalVotes,
+            session.startTime,
+            session.endTime,
+            session.isActive,
+            session.isCompleted,
+            session.complaintUpheld
+        );
     }
+
+
 
     /**
      * @notice 获取验证者投票信息
@@ -282,6 +309,141 @@ contract VotingManager is Ownable, CommonModifiers {
     returns (address[] memory)
     {
         return votingSessions[caseId].selectedValidators;
+    }
+
+    // ==================== 投票结果更新函数 ====================
+
+    /**
+     * @notice 更新验证者的最终投票选择
+     * @dev 在质疑期结束后，根据质疑结果更新验证者的最终投票
+     * 只能由治理合约或授权的合约调用（如DisputeManager）
+     */
+    function updateValidatorFinalChoice(
+        uint256 caseId,
+        address validator,
+        DataStructures.VoteChoice newChoice,
+        string calldata reason
+    ) external onlyGovernance caseExists(caseId) {
+        DataStructures.VotingSession storage session = votingSessions[caseId];
+        
+        // 验证验证者确实参与了此案件
+        if (!session.votes[validator].hasVoted) {
+            revert Errors.ValidatorNotParticipating(validator, caseId);
+        }
+
+        // 更新最终选择
+        DataStructures.VoteInfo storage voteInfo = session.votes[validator];
+        DataStructures.VoteChoice oldChoice = voteInfo.finalChoice;
+        voteInfo.finalChoice = newChoice;
+
+        // 如果选择发生了变化，更新统计数据
+        if (oldChoice != newChoice) {
+            if (oldChoice == DataStructures.VoteChoice.SUPPORT_COMPLAINT) {
+                session.supportVotes--;
+                session.rejectVotes++;
+            } else {
+                session.supportVotes++;
+                session.rejectVotes--;
+            }
+
+            // 发出投票更新事件
+            emit Events.VoteSubmitted(
+                caseId,
+                validator,
+                newChoice,
+                block.timestamp
+            );
+        }
+    }
+
+    /**
+     * @notice 更新投票会话的最终统计结果
+     * @dev 在质疑期结束后，直接更新最终的投票统计数据
+     * 只能由治理合约或授权的合约调用（如DisputeManager）
+     */
+    function updateFinalVotingResult(
+        uint256 caseId,
+        uint256 finalSupportVotes,
+        uint256 finalRejectVotes,
+        bool finalComplaintUpheld
+    ) external onlyGovernance caseExists(caseId) {
+        DataStructures.VotingSession storage session = votingSessions[caseId];
+        
+        // 更新最终的投票统计
+        session.supportVotes = finalSupportVotes;
+        session.rejectVotes = finalRejectVotes;
+        session.complaintUpheld = finalComplaintUpheld;
+
+        // 发出更新后的投票完成事件
+        emit Events.VotingCompleted(
+            caseId,
+            finalComplaintUpheld,
+            finalSupportVotes,
+            finalRejectVotes,
+            block.timestamp
+        );
+    }
+
+    /**
+     * @notice 批量更新验证者的最终投票选择
+     * @dev 用于批量处理多个验证者的投票更新，提高效率
+     * @param caseId 案件ID
+     * @param validators 验证者地址数组
+     * @param newChoices 新的投票选择数组
+     * @param reason 更改原因
+     */
+    function batchUpdateValidatorFinalChoices(
+        uint256 caseId,
+        address[] calldata validators,
+        DataStructures.VoteChoice[] calldata newChoices,
+        string calldata reason
+    ) external onlyGovernance caseExists(caseId) {
+        if (validators.length != newChoices.length) {
+            revert Errors.InvalidAmount(validators.length, newChoices.length);
+        }
+
+        DataStructures.VotingSession storage session = votingSessions[caseId];
+        uint256 supportDelta = 0;
+        uint256 rejectDelta = 0;
+
+        for (uint256 i = 0; i < validators.length; i++) {
+            address validator = validators[i];
+            DataStructures.VoteChoice newChoice = newChoices[i];
+
+            // 验证验证者确实参与了此案件
+            if (!session.votes[validator].hasVoted) {
+                continue; // 跳过未参与投票的验证者
+            }
+
+            DataStructures.VoteInfo storage voteInfo = session.votes[validator];
+            DataStructures.VoteChoice oldChoice = voteInfo.finalChoice;
+            
+            if (oldChoice != newChoice) {
+                voteInfo.finalChoice = newChoice;
+
+                // 计算统计变化
+                if (oldChoice == DataStructures.VoteChoice.SUPPORT_COMPLAINT) {
+                    supportDelta--;
+                    rejectDelta++;
+                } else {
+                    supportDelta++;
+                    rejectDelta--;
+                }
+
+                // 发出投票更新事件
+                emit Events.VoteSubmitted(
+                    caseId,
+                    validator,
+                    newChoice,
+                    block.timestamp
+                );
+            }
+        }
+
+        // 更新总体统计
+        session.supportVotes += supportDelta;
+        session.rejectVotes += rejectDelta;
+        session.complaintUpheld = session.supportVotes > session.rejectVotes;
     }
 
     // ==================== 管理函数 ====================
