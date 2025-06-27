@@ -4,6 +4,7 @@ pragma solidity ^0.8.20; // 使用最新稳定版本的Solidity
 import "../libraries/DataStructures.sol"; // 导入数据结构库
 import "../libraries/Errors.sol"; // 导入错误处理库
 import "../libraries/Events.sol"; // 导入事件库
+import "../libraries/CommonModifiers.sol";
 import "@openzeppelin/contracts/access/Ownable.sol"; // 导入所有权控制
 
 /**
@@ -73,24 +74,20 @@ contract RewardPunishmentManager is Ownable {
 
     /**
      * @notice 个人奖励记录 - 记录单个用户在特定案件中的奖励信息
-     * @dev 详细记录奖励的各项信息，支持奖励的管理和追踪
      */
     struct PersonalReward {
-        uint256 amount; // 奖励金额 - 用户应获得的具体金额
-        string reason; // 奖励原因 - 获得奖励的具体原因说明
-        DataStructures.RewardPunishmentStatus status; // 奖励状态 - 奖励的当前状态
-        bool claimed; // 是否已领取 - 用户是否已经领取该奖励
+        uint256 amount; // 奖励金额
+        string reason; // 奖励原因
+        bool claimed; // 是否已领取
     }
 
     /**
      * @notice 个人惩罚记录 - 记录单个用户在特定案件中的惩罚信息
-     * @dev 详细记录惩罚的各项信息，支持惩罚的执行和监控
      */
     struct PersonalPunishment {
-        uint256 amount; // 惩罚金额 - 用户应承担的具体金额
-        string reason; // 惩罚原因 - 受到惩罚的具体原因说明
-        DataStructures.RewardPunishmentStatus status; // 惩罚状态 - 惩罚的当前状态
-        bool executed; // 是否已执行 - 惩罚是否已经实际执行（扣款等）
+        uint256 amount; // 惩罚金额
+        string reason; // 惩罚原因
+        bool executed; // 是否已执行
     }
 
     /**
@@ -278,10 +275,7 @@ contract RewardPunishmentManager is Ownable {
 
             if (votedCorrectly) {
                 // 投票正确，诚实，获得奖励
-                status.integrity = DataStructures.IntegrityStatus.HONEST;
-                status.rewardPunishment = DataStructures
-                    .RewardPunishmentStatus
-                    .REWARD;
+                // Note: Removed integrity and rewardPunishment field access as they don't exist in UserStatus
 
                 // 计算奖励金额（基础奖励）
                 uint256 rewardAmount = _calculateValidatorReward(validator);
@@ -291,7 +285,6 @@ contract RewardPunishmentManager is Ownable {
                 record.personalRewards[validator] = PersonalReward({
                     amount: rewardAmount,
                     reason: "Correct validation",
-                    status: DataStructures.RewardPunishmentStatus.REWARD,
                     claimed: false
                 });
 
@@ -331,17 +324,14 @@ contract RewardPunishmentManager is Ownable {
                 emit Events.UserIntegrityStatusUpdated(
                     caseId,
                     validator,
-                    DataStructures.IntegrityStatus.DISHONEST, // 假设之前状态
-                    DataStructures.IntegrityStatus.HONEST,
-                    DataStructures.RewardPunishmentStatus.REWARD,
+                    uint8(DataStructures.IntegrityStatus.DISHONEST), // 假设之前状态
+                    uint8(DataStructures.IntegrityStatus.HONEST),
+                    uint8(DataStructures.RewardPunishmentStatus.REWARD),
                     block.timestamp
                 );
             } else {
                 // 投票错误，不诚实，接受惩罚
-                status.integrity = DataStructures.IntegrityStatus.DISHONEST;
-                status.rewardPunishment = DataStructures
-                    .RewardPunishmentStatus
-                    .PUNISHMENT;
+                // Note: Removed integrity and rewardPunishment field access as they don't exist in UserStatus
 
                 // 计算惩罚金额
                 uint256 punishmentAmount = _calculateValidatorPunishment(
@@ -353,7 +343,6 @@ contract RewardPunishmentManager is Ownable {
                 record.personalPunishments[validator] = PersonalPunishment({
                     amount: punishmentAmount,
                     reason: "Incorrect validation",
-                    status: DataStructures.RewardPunishmentStatus.PUNISHMENT,
                     executed: false
                 });
 
@@ -364,15 +353,17 @@ contract RewardPunishmentManager is Ownable {
                 emit Events.UserIntegrityStatusUpdated(
                     caseId,
                     validator,
-                    DataStructures.IntegrityStatus.HONEST, // 假设之前状态
-                    DataStructures.IntegrityStatus.DISHONEST,
-                    DataStructures.RewardPunishmentStatus.PUNISHMENT,
+                    uint8(DataStructures.IntegrityStatus.HONEST), // 假设之前状态
+                    uint8(DataStructures.IntegrityStatus.DISHONEST),
+                    uint8(DataStructures.RewardPunishmentStatus.PUNISHMENT),
                     block.timestamp
                 );
             }
 
             // 更新验证者统计
             status.participationCount++;
+            status.isActive = true;
+            status.lastActiveTime = block.timestamp;
         }
     }
 
@@ -395,10 +386,7 @@ contract RewardPunishmentManager is Ownable {
 
             if (successful) {
                 // 质疑成功，诚实，获得奖励
-                status.integrity = DataStructures.IntegrityStatus.HONEST;
-                status.rewardPunishment = DataStructures
-                    .RewardPunishmentStatus
-                    .REWARD;
+                // Note: Tracking integrity status through events instead of struct fields
 
                 uint256 rewardAmount = _calculateChallengerReward(challenger);
 
@@ -406,7 +394,6 @@ contract RewardPunishmentManager is Ownable {
                 record.personalRewards[challenger] = PersonalReward({
                     amount: rewardAmount,
                     reason: "Successful challenge",
-                    status: DataStructures.RewardPunishmentStatus.REWARD,
                     claimed: false
                 });
 
@@ -428,7 +415,6 @@ contract RewardPunishmentManager is Ownable {
                 record.personalPunishments[challenger] = PersonalPunishment({
                     amount: punishmentAmount,
                     reason: "Failed challenge",
-                    status: DataStructures.RewardPunishmentStatus.PUNISHMENT,
                     executed: false
                 });
 
@@ -440,9 +426,9 @@ contract RewardPunishmentManager is Ownable {
             emit Events.UserIntegrityStatusUpdated(
                 caseId,
                 challenger,
-                DataStructures.IntegrityStatus.HONEST, // 简化处理
-                status.integrity,
-                status.rewardPunishment,
+                uint8(DataStructures.IntegrityStatus.HONEST), // 简化处理
+                uint8(status.integrity),
+                uint8(status.rewardPunishment),
                 block.timestamp
             );
         }
@@ -482,7 +468,6 @@ contract RewardPunishmentManager is Ownable {
             record.personalRewards[complainant] = PersonalReward({
                 amount: compensationAmount,
                 reason: "Complaint upheld compensation",
-                status: DataStructures.RewardPunishmentStatus.REWARD,
                 claimed: false
             });
 
@@ -506,7 +491,6 @@ contract RewardPunishmentManager is Ownable {
             record.personalPunishments[enterprise] = PersonalPunishment({
                 amount: enterprisePenalty,
                 reason: "Food safety violation",
-                status: DataStructures.RewardPunishmentStatus.PUNISHMENT,
                 executed: false
             });
 
@@ -534,7 +518,6 @@ contract RewardPunishmentManager is Ownable {
             record.personalPunishments[complainant] = PersonalPunishment({
                 amount: falseComplaintPenalty,
                 reason: "False complaint",
-                status: DataStructures.RewardPunishmentStatus.PUNISHMENT,
                 executed: false
             });
 
@@ -558,7 +541,6 @@ contract RewardPunishmentManager is Ownable {
                 record.personalRewards[enterprise] = PersonalReward({
                     amount: reputationCompensation,
                     reason: "Reputation restoration",
-                    status: DataStructures.RewardPunishmentStatus.REWARD,
                     claimed: false
                 });
 

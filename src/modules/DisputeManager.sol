@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "../libraries/DataStructures.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
+import "../libraries/CommonModifiers.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
@@ -12,7 +13,18 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  */
 interface IVotingManager {
     function isSelectedValidator(uint256 caseId, address validator) external view returns (bool);
-
+    function getVotingSessionInfo(uint256 caseId) external view returns (
+        uint256, // caseId
+        address[] memory, // selectedValidators
+        uint256, // supportVotes
+        uint256, // rejectVotes
+        uint256, // totalVotes
+        uint256, // startTime
+        uint256, // endTime
+        bool, // isActive
+        bool, // isCompleted
+        bool // complaintUpheld
+    );
 }
 
 /**
@@ -31,6 +43,18 @@ interface IFundManager {
 }
 
 /**
+ * @notice ParticipantPoolManager接口
+ * @dev 定义DisputeManager需要调用的ParticipantPoolManager函数
+ */
+interface IParticipantPoolManager {
+    function canParticipateInCase(
+        uint256 caseId,
+        address user,
+        DataStructures.UserRole requiredRole
+    ) external view returns (bool);
+}
+
+/**
  * @title DisputeManager
  * @author Food Safety Governance Team
  * @notice 质疑管理模块，负责处理对验证者投票结果的质疑
@@ -38,11 +62,9 @@ interface IFundManager {
  * 这是确保投票公正性的重要模块，允许社区对验证者的决定提出异议
  * 通过质疑机制可以纠正可能的错误判断，维护系统的公正性
  */
-contract DisputeManager is Ownable {
+contract DisputeManager is Ownable, CommonModifiers {
     // ==================== 状态变量 ====================
-    /// @notice 治理合约地址 - 有权启动和结束质疑期的合约
-    /// @dev 只有治理合约才能管理质疑会话的生命周期
-    address public governanceContract;
+    // governanceContract 已在 CommonModifiers 中定义
 
     /// @notice 资金管理合约 - 负责处理质疑保证金的合约
     /// @dev 质疑保证金需要通过资金管理合约进行冻结和释放
@@ -51,6 +73,10 @@ contract DisputeManager is Ownable {
     /// @notice 投票管理合约 - 用于验证被质疑的验证者信息
     /// @dev 需要验证被质疑的验证者确实参与了相关案件的投票
     IVotingManager public votingManager;
+
+    /// @notice 参与者池管理合约 - 用于验证用户角色和参与权限
+    /// @dev 验证质疑者是否具有DAO_MEMBER角色且未参与此案件
+    IParticipantPoolManager public poolManager;
 
     /// @notice 案件质疑信息映射 caseId => DisputeSession
     /// @dev 存储每个案件的完整质疑会话信息
@@ -110,17 +136,7 @@ contract DisputeManager is Ownable {
 
     // ==================== 修饰符 ====================
 
-    /**
-     * @notice 只有治理合约可以调用
-     * @dev 确保关键的质疑管理功能只能由授权的治理合约执行
-     * 防止未授权访问质疑会话管理功能
-     */
-    modifier onlyGovernance() {
-        if (msg.sender != governanceContract) {
-            revert Errors.InsufficientPermission(msg.sender, "GOVERNANCE");
-        }
-        _;
-    }
+    // onlyGovernance 修饰符已在 CommonModifiers 中定义
 
     /**
      * @notice 检查质疑期是否激活
@@ -141,17 +157,7 @@ contract DisputeManager is Ownable {
         _;
     }
 
-    /**
-     * @notice 检查地址是否为零地址
-     * @dev 防止将关键合约地址设置为零地址
-     * 避免系统功能失效和资金丢失
-     */
-    modifier notZeroAddress(address account) {
-        if (account == address(0)) {
-            revert Errors.ZeroAddress();
-        }
-        _;
-    }
+    // notZeroAddress 修饰符已在 CommonModifiers 中定义
 
     // ==================== 构造函数 ====================
 
@@ -205,9 +211,9 @@ contract DisputeManager is Ownable {
     }
 
     /**
-     * @notice 提交质疑
-     * @dev 用户对特定验证者的投票决定提出质疑
-     * 需要提交质疑保证金和支持证据
+     * @notice 提交质疑（仅限DAO成员且未参与此案件）
+     * @dev 质疑者必须是DAO_MEMBER角色且未参与此案件的验证或质疑
+     * 使用统一的保证金处理机制，支持角色权限验证
      * @param caseId 案件ID
      * @param targetValidator 被质疑的验证者地址
      * @param choice 质疑选择（支持或反对验证者）
@@ -223,9 +229,18 @@ contract DisputeManager is Ownable {
         string calldata evidenceHash,
         uint256 challengeDeposit
     ) external payable disputeActive(caseId) notZeroAddress(targetValidator) {
+        // 验证质疑者必须是DAO成员且未参与此案件
+        if (!poolManager.canParticipateInCase(caseId, msg.sender, DataStructures.UserRole.DAO_MEMBER)) {
+            revert Errors.InvalidUserRole(
+                msg.sender, 
+                uint8(DataStructures.UserRole.DAO_MEMBER), 
+                uint8(DataStructures.UserRole.DAO_MEMBER)
+            );
+        }
+
         // 验证质疑保证金金额与实际支付是否一致
         if (msg.value != challengeDeposit || challengeDeposit == 0) {
-            revert Errors.InsufficientChallengeDeposit(
+            revert Errors.InvalidAmount(
                 msg.value,
                 challengeDeposit
             );
@@ -233,7 +248,7 @@ contract DisputeManager is Ownable {
 
         // 检查是否尝试质疑自己，防止自我质疑的异常情况
         if (msg.sender == targetValidator) {
-            revert Errors.CannotChallengeSelf(msg.sender);
+            revert Errors.InsufficientPermission(msg.sender, "Cannot challenge self");
         }
 
         // 检查是否已经质疑过该验证者，防止重复质疑
@@ -271,12 +286,12 @@ contract DisputeManager is Ownable {
         });
 
         // 更新质疑投票信息
-        DataStructures.ChallengeVotingInfo challengeVotingInfo = challengeVotingInfo[targetValidator];
-        challengeVotingInfo.targetValidator = targetValidator;
+        DataStructures.ChallengeVotingInfo storage info = session.challengeVotingInfo[targetValidator];
+        info.targetValidator = targetValidator;
         if (choice == DataStructures.ChallengeChoice.SUPPORT_VALIDATOR) {
-            challengeVotingInfo.supporters.push(msg.sender); // 添加支持者
+            info.supporters.push(msg.sender); // 添加支持者
         } else {
-            challengeVotingInfo.opponents.push(msg.sender); // 添加反对者
+            info.opponents.push(msg.sender); // 添加反对者
         }
 
         // 将质疑添加到会话中
@@ -356,6 +371,20 @@ contract DisputeManager is Ownable {
         if (block.timestamp < session.endTime) {
             revert Errors.OperationTooEarly(block.timestamp, session.endTime);
         }
+
+        // 获取原始投票结果
+        (
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            ,
+            bool originalResult
+        ) = votingManager.getVotingSessionInfo(caseId);
 
         // 如果没有收到任何质疑，结果保持不变
         if (session.totalChallenges == 0) {
@@ -703,6 +732,17 @@ contract DisputeManager is Ownable {
     }
 
     /**
+     * @notice 设置参与者池管理合约地址
+     * @dev 设置用于验证用户角色和参与权限的参与者池管理合约地址
+     * @param _poolManager 参与者池管理合约地址
+     */
+    function setPoolManager(
+        address _poolManager
+    ) external onlyOwner notZeroAddress(_poolManager) {
+        poolManager = IParticipantPoolManager(_poolManager);
+    }
+
+    /**
      * @notice 紧急暂停质疑会话
      * @dev 在紧急情况下暂停正在进行的质疑会话
      * 只有合约所有者可以调用，用于处理异常情况
@@ -722,7 +762,6 @@ contract DisputeManager is Ownable {
         // 发出紧急暂停事件
         emit Events.EmergencyTriggered(
             caseId,
-            "Dispute Paused",
             "Emergency pause of dispute session",
             msg.sender,
             block.timestamp

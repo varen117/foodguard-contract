@@ -11,6 +11,7 @@ import "./modules/FundManager.sol"; // 资金和保证金管理模块
 import "./modules/VotingManager.sol"; // 投票和验证者管理模块
 import "./modules/DisputeManager.sol"; // 质疑和争议处理模块
 import "./modules/RewardPunishmentManager.sol"; // 奖惩计算和分配模块
+import "./modules/ParticipantPoolManager.sol"; // 参与者池管理模块
 
 // 导入OpenZeppelin安全组件
 import "@openzeppelin/contracts/utils/Pausable.sol"; // 暂停功能，用于紧急情况
@@ -43,72 +44,45 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     /// @dev 从0开始递增，确保每个案件都有唯一标识符
     uint256 public caseCounter;
 
-    /// @notice 模块合约地址 - 治理系统的四大核心模块
-    /// @dev 模块化设计使系统更易维护和升级
-    FundManager public fundManager; // 资金管理模块：处理保证金、奖励池、动态保证金
-    VotingManager public votingManager; // 投票管理模块：管理验证者选择和投票过程
-    DisputeManager public disputeManager; // 质疑管理模块：处理投票结果的质疑和争议
-    RewardPunishmentManager public rewardManager; // 奖惩管理模块：计算和分配奖励惩罚
+    /// @notice 核心模块合约地址
+    FundManager public fundManager;
+    VotingManager public votingManager;
+    DisputeManager public disputeManager;
+    RewardPunishmentManager public rewardManager;
+    ParticipantPoolManager public poolManager;
 
     /// @notice 案件信息映射 - 存储所有案件的核心信息
     /// @dev 键值对：caseId => CaseInfo，提供案件的完整状态追踪
     mapping(uint256 => CaseInfo) public cases;
 
-    /// @notice 普通用户注册状态 - 记录普通用户的注册状态
-    /// @dev 键值对：user => isRegistered，控制用户参与权限
-    mapping(address => bool) public isUserRegistered;
-
-    /// @notice 企业注册状态 - 记录企业的注册状态
-    /// @dev 键值对：enterprise => isRegistered，企业需要更高保证金
-    mapping(address => bool) public isEnterpriseRegistered;
-
-    /// @notice DAO组织注册状态 - 记录DAO成员的注册状态
-    /// @dev 键值对：dao => isRegistered，DAO成员可参与验证和质疑
-    mapping(address => bool) public isDaoRegistered;
-
-    /// @notice 用户类型映射 - 区分普通用户和企业用户
-    /// @dev 键值对：user => isEnterprise，影响保证金要求和权限
-    mapping(address => bool) public isEnterprise;
-
-    /// @notice 风险等级评估映射 - 记录企业的风险等级评估
-    /// @dev 键值对：enterprise => riskLevel，影响相关案件的保证金和处理优先级
+    /// @notice 企业风险等级映射（保留，用于案件风险评估）
     mapping(address => DataStructures.RiskLevel) public enterpriseRiskLevel;
 
     // ==================== 结构体定义 ====================
 
     /**
-     * @notice 案件信息结构体（主要状态信息）
+     * @notice 案件信息结构体
      */
     struct CaseInfo {
-        uint256 caseId; // 案件ID
-        address complainant; // 投诉者
-        address enterprise; // 被投诉企业
-        string complaintTitle; // 投诉标题
-        string complaintDescription; // 投诉描述
-        string location; // 事发地点
-        uint256 incidentTime; // 事发时间
-        uint256 complaintTime; // 投诉时间
-        DataStructures.CaseStatus status; // 案件状态
-        DataStructures.RiskLevel riskLevel; // 风险等级
-        bool complaintUpheld; // 投诉是否成立
-        uint256 complainantDeposit; // 投诉者保证金
-        uint256 enterpriseDeposit; // 企业保证金
-        string complainantEvidenceHash; // 投诉者证据哈希
-        bool isCompleted; // 是否已完成
-        uint256 completionTime; // 完成时间
+        uint256 caseId;
+        address complainant;
+        address enterprise;
+        string complaintTitle;
+        string complaintDescription;
+        string location;
+        uint256 incidentTime;
+        uint256 complaintTime;
+        DataStructures.CaseStatus status;
+        DataStructures.RiskLevel riskLevel;
+        bool complaintUpheld;
+        uint256 complainantDeposit;
+        uint256 enterpriseDeposit;
+        string complainantEvidenceHash;
+        bool isCompleted;
+        uint256 completionTime;
     }
 
     // ==================== 修饰符 ====================
-    /**
-     * @notice 检查用户是否已注册
-     */
-    modifier onlyRegisteredUser() {
-        if (!isUserRegistered[msg.sender]) {
-            revert Errors.InsufficientPermission(msg.sender, "REGISTERED_USER");
-        }
-        _;
-    }
-
     /**
      * @notice 检查案件是否存在
      */
@@ -150,18 +124,21 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @param _votingManager 投票管理合约地址
      * @param _disputeManager 质疑管理合约地址
      * @param _rewardManager 奖惩管理合约地址
+     * @param _poolManager 参与者池管理合约地址
      */
     function initializeContracts(
         address payable _fundManager,
         address _votingManager,
         address _disputeManager,
-        address _rewardManager
+        address _rewardManager,
+        address _poolManager
     ) external onlyOwner {
         if (
             _fundManager == address(0) ||
             _votingManager == address(0) ||
             _disputeManager == address(0) ||
-            _rewardManager == address(0)
+            _rewardManager == address(0) ||
+            _poolManager == address(0)
         ) {
             revert Errors.ZeroAddress();
         }
@@ -170,118 +147,9 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         votingManager = VotingManager(_votingManager);
         disputeManager = DisputeManager(_disputeManager);
         rewardManager = RewardPunishmentManager(_rewardManager);
+        poolManager = ParticipantPoolManager(_poolManager);
 
         // 注意：各模块的治理合约地址应该在调用此函数之前由管理员设置
-    }
-
-    // ==================== 用户注册函数 ====================
-
-    /**
-     * @notice 注册普通用户
-     */
-    function registerUser() external payable whenNotPaused {
-        if (isUserRegistered[msg.sender]) {
-            revert Errors.DuplicateOperation(msg.sender, "Registered");
-        }
-
-        // 要求最小保证金
-        DataStructures.SystemConfig memory config = fundManager
-            .getSystemConfig();
-        if (msg.value < config.minComplaintDeposit) {
-            revert Errors.InsufficientComplaintDeposit(
-                msg.value,
-                config.minComplaintDeposit
-            );
-        }
-
-        isUserRegistered[msg.sender] = true;
-        isEnterprise[msg.sender] = false;
-
-        // 在资金管理合约中注册用户保证金
-        fundManager.registerUserDeposit{value: msg.value}(
-            msg.sender,
-            msg.value,
-            DataStructures.UserRole.COMPLAINANT
-        );
-
-        emit Events.UserRegistered(
-            msg.sender,
-            false,
-            msg.value,
-            block.timestamp
-        );
-    }
-
-    /**
-     * @notice 注册企业用户
-     */
-    function registerEnterprise() external payable whenNotPaused {
-        if (isEnterpriseRegistered[msg.sender]) {
-            revert Errors.DuplicateOperation(msg.sender, "Registered");
-        }
-
-        // 企业需要更高的保证金
-        DataStructures.SystemConfig memory config = fundManager
-            .getSystemConfig();
-        if (msg.value < config.minEnterpriseDeposit) {
-            revert Errors.InsufficientEnterpriseDeposit(
-                msg.value,
-                config.minEnterpriseDeposit,
-                DataStructures.UserRole.ENTERPRISE
-            );
-        }
-
-        isUserRegistered[msg.sender] = true;
-        isEnterprise[msg.sender] = true;
-        isEnterpriseRegistered[msg.sender] = true;
-        enterpriseRiskLevel[msg.sender] = DataStructures.RiskLevel.LOW; // 默认低风险
-
-        // 在资金管理合约中注册企业保证金
-        fundManager.registerUserDeposit{value: msg.value}(
-            msg.sender,
-            msg.value
-        );
-
-        emit Events.UserRegistered(
-            msg.sender,
-            true,
-            msg.value,
-            block.timestamp
-        );
-    }
-
-    /**
-     * @notice 注册DAO成员
-     */
-    function registerDaoMember() external payable whenNotPaused {
-        if (isUserRegistered[msg.sender]) {
-            revert Errors.DuplicateOperation(msg.sender, "Registered");
-        }
-        DataStructures.SystemConfig memory config = fundManager
-            .getSystemConfig();
-        if (msg.value < config.minDaoDeposit) {
-            revert Errors.InsufficientValidatorDeposit(
-                msg.value,
-                config.minDaoDeposit
-            );
-        }
-
-        isUserRegistered[msg.sender] = true;
-        isEnterprise[msg.sender] = false;
-
-        // 在资金管理合约中注册DAO保证金
-        fundManager.registerUserDeposit{value: msg.value}(
-            msg.sender,
-            msg.value,
-            DataStructures.UserRole.DAO_MEMBER
-        );
-
-        emit Events.UserRegistered(
-            msg.sender,
-            false,
-            msg.value,
-            block.timestamp
-        );
     }
 
     // ==================== 核心流程函数 ====================
@@ -325,7 +193,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     external
     payable
     whenNotPaused
-    onlyRegisteredUser
     returns (uint256 caseId)
     {
         // 验证输入参数
@@ -333,12 +200,32 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             revert Errors.ZeroAddress();
         }
 
-        if (!isEnterpriseRegistered[enterprise]) {
+        if (!poolManager.isEnterpriseRegistered(enterprise)) {
             revert Errors.EnterpriseNotRegistered(enterprise);
         }
 
         if (msg.sender == enterprise) {
             revert Errors.CannotComplainAgainstSelf(msg.sender, enterprise);
+        }
+
+        // 验证投诉者角色权限
+        (bool complainantRegistered, DataStructures.UserRole complainantRole, bool complainantActive,) = poolManager.getUserInfo(msg.sender);
+        if (!complainantRegistered || !complainantActive || complainantRole != DataStructures.UserRole.COMPLAINANT) {
+            revert Errors.InvalidUserRole(
+                msg.sender,
+                uint8(complainantRole),
+                uint8(DataStructures.UserRole.COMPLAINANT)
+            );
+        }
+
+        // 验证企业角色权限
+        (bool enterpriseRegistered, DataStructures.UserRole enterpriseRole, bool enterpriseActive,) = poolManager.getUserInfo(enterprise);
+        if (!enterpriseRegistered || !enterpriseActive || enterpriseRole != DataStructures.UserRole.ENTERPRISE) {
+            revert Errors.InvalidUserRole(
+                enterprise,
+                uint8(enterpriseRole),
+                uint8(DataStructures.UserRole.ENTERPRISE)
+            );
         }
 
         if (
@@ -478,7 +365,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             caseId,
             DataStructures.CaseStatus.PENDING,
             DataStructures.CaseStatus.DEPOSIT_LOCKED,
-            address(this),
             block.timestamp
         );
 
@@ -499,19 +385,65 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     }
 
     /**
-     * @notice 步骤3: 开始投票
+     * @notice 步骤3: 开始投票 - 随机选择验证者并启动投票流程
+     * @dev 使用ParticipantPoolManager随机选择验证者，确保公平性和随机性
+     * 流程：
+     * 1. 验证投诉者和企业的角色权限
+     * 2. 使用ParticipantPoolManager随机选择验证者（奇数个）
+     * 3. 将选中的验证者传递给VotingManager开始投票
+     * 4. 更新案件状态为VOTING
+     *
+     * 选择规则：
+     * - 验证者必须是DAO_MEMBER角色
+     * - 验证者不能是投诉者或被投诉企业
+     * - 验证者不能已经参与此案件
+     * - 验证者数量必须为奇数（避免平票）
+     *
      * @param caseId 案件ID
      */
     function _startVoting(uint256 caseId) internal {
         CaseInfo storage caseInfo = cases[caseId];
-        DataStructures.SystemConfig memory config = fundManager
-            .getSystemConfig();
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
 
-        // 随机选择验证者并开始投票
-        votingManager.startVotingSession(
+        // 验证投诉者角色权限
+        if (!poolManager.canParticipateInCase(caseId, caseInfo.complainant, DataStructures.UserRole.COMPLAINANT)) {
+            revert Errors.InvalidUserRole(
+                caseInfo.complainant,
+                uint8(DataStructures.UserRole.COMPLAINANT),
+                uint8(DataStructures.UserRole.COMPLAINANT)
+            );
+        }
+
+        // 验证企业角色权限
+        if (!poolManager.canParticipateInCase(caseId, caseInfo.enterprise, DataStructures.UserRole.ENTERPRISE)) {
+            revert Errors.InvalidUserRole(
+                caseInfo.enterprise,
+                uint8(DataStructures.UserRole.ENTERPRISE),
+                uint8(DataStructures.UserRole.ENTERPRISE)
+            );
+        }
+
+        // 确定验证者数量（基于风险等级动态调整）
+        uint256 validatorCount = config.minValidators;
+        if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
+            validatorCount = config.maxValidators > 7 ? 7 : config.maxValidators; // 高风险案件更多验证者
+        } else if (caseInfo.riskLevel == DataStructures.RiskLevel.MEDIUM) {
+            validatorCount = config.minValidators + 2; // 中风险案件适中验证者
+        }
+
+        // 确保验证者数量为奇数
+        if (validatorCount % 2 == 0) {
+            validatorCount += 1;
+        }
+
+        // 使用ParticipantPoolManager随机选择验证者
+        address[] memory selectedValidators = poolManager.selectValidators(caseId, validatorCount);
+
+        // 将选中的验证者传递给VotingManager开始投票
+        votingManager.startVotingSessionWithValidators(
             caseId,
-            config.votingPeriod,
-            config.minValidators
+            selectedValidators,
+            config.votingPeriod
         );
 
         // 更新案件状态
@@ -521,9 +453,11 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             caseId,
             DataStructures.CaseStatus.DEPOSIT_LOCKED,
             DataStructures.CaseStatus.VOTING,
-            address(this),
             block.timestamp
         );
+
+        // 发出验证者选择事件
+        emit Events.ValidatorsSelected(caseId, selectedValidators, block.timestamp);
     }
 
 
@@ -556,7 +490,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             caseId,
             DataStructures.CaseStatus.VOTING,
             DataStructures.CaseStatus.CHALLENGING,
-            msg.sender,
             block.timestamp
         );
     }
@@ -586,7 +519,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             caseId,
             DataStructures.CaseStatus.CHALLENGING,
             DataStructures.CaseStatus.REWARD_PUNISHMENT,
-            msg.sender,
             block.timestamp
         );
 
@@ -753,22 +685,6 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         return caseCounter;
     }
 
-    /**
-     * @notice 检查用户是否为企业
-     */
-    function checkIsEnterprise(address user) external view returns (bool) {
-        return isEnterprise[user];
-    }
-
-    /**
-     * @notice 获取企业风险等级
-     */
-    function getEnterpriseRiskLevel(
-        address enterprise
-    ) external view returns (DataStructures.RiskLevel) {
-        return enterpriseRiskLevel[enterprise];
-    }
-
     // ==================== 管理函数 ====================
 
     /**
@@ -790,7 +706,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         address enterprise,
         DataStructures.RiskLevel newLevel
     ) external onlyOwner {
-        if (!isEnterpriseRegistered[enterprise]) {
+        if (!poolManager.isEnterpriseRegistered(enterprise)) {
             revert Errors.EnterpriseNotRegistered(enterprise);
         }
 

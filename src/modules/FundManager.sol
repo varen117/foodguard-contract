@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol"; // 导入暂停功能，用
 import "../libraries/DataStructures.sol"; // 导入数据结构库
 import "../libraries/Errors.sol"; // 导入错误处理库
 import "../libraries/Events.sol"; // 导入事件库
+import "../libraries/CommonModifiers.sol"; // 导入公共修饰符库
 
 /**
  * @title FundManager
@@ -19,7 +20,7 @@ import "../libraries/Events.sol"; // 导入事件库
  * 3. 分层风险管理：设置多级警告阈值，逐步限制用户操作直至强制清算
  * 4. 自动清算系统：当用户保证金严重不足时自动执行清算流程
  */
-contract FundManager is AccessControl, ReentrancyGuard, Pausable {
+contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifiers {
     // ==================== 角色定义 ====================
     // 使用基于角色的访问控制，确保不同功能只能由相应权限的地址调用
 
@@ -63,9 +64,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
     /// @dev 用于动态保证金计算，避免跨合约调用的gas消耗
     mapping(address => uint256) public userReputation;
 
-    /// @notice 用户角色映射 - 记录用户的角色
-    mapping(address => DataStructures.UserRole) public userRole;
-
     /// @notice 系统常量定义 - 规定系统运行的基本限制
     uint256 public constant MIN_DEPOSIT = 0.01 ether; // 最小保证金：0.01 ETH
     uint256 public constant MAX_DEPOSIT = 100 ether; // 最大保证金：100 ETH
@@ -98,15 +96,10 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
 
     /**
      * @notice 检查地址是否为零地址
-     * @dev 防止将关键功能的地址参数设置为零地址
+     * @dev 防止将关键合约地址设置为零地址
      * 零地址会导致资金丢失或功能失效
      */
-    modifier notZeroAddress(address account) {
-        if (account == address(0)) {
-            revert Errors.ZeroAddress();
-        }
-        _;
-    }
+    // notZeroAddress 修饰符已在 CommonModifiers 中定义
 
     // ==================== 构造函数 ====================
 
@@ -121,42 +114,35 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
 
         // 初始化系统配置 - 这些参数控制整个治理系统的运行
         systemConfig = DataStructures.SystemConfig({
-            minComplaintDeposit: 0.05 ether, // 投诉最小保证金：防止恶意投诉
-            maxComplaintDeposit: 10 ether, // 投诉最大保证金：避免门槛过高
-            minEnterpriseDeposit: 1 ether, // 企业最小保证金：确保企业有足够经济责任
-            maxEnterpriseDeposit: 50 ether, // 企业最大保证金：合理上限
-            minDaoDeposit: 0.1 ether, // DAO成员最小保证金：验证者参与门槛
-            maxDaoDeposit: 20 ether, // DAO成员最大保证金：合理上限
-            votingPeriod: 7 days, // 投票期限：7天，给验证者充分时间分析
-            challengePeriod: 3 days, // 质疑期限：3天，平衡效率和公正性
-            minValidators: 3, // 最少验证者：保证基本的决策有效性
-            maxValidators: 15, // 最多验证者：避免决策效率过低
-            rewardPoolPercentage: 70, // 奖励池比例：70%用于奖励正确参与者
-            operationalFeePercentage: 10 // 运营费用比例：10%用于系统运营
+            minComplaintDeposit: 0.01 ether,
+            minEnterpriseDeposit: 0.1 ether,
+            minDaoDeposit: 0.05 ether,
+            votingPeriod: 3 days,
+            challengePeriod: 2 days,
+            minValidators: 3,
+            maxValidators: 15,
+            rewardPoolPercentage: 30,
+            operationalFeePercentage: 5
         });
 
-        // 初始化动态保证金配置 - 这些参数控制风险管理和保证金调整
+        // 初始化动态保证金配置
         dynamicConfig = DataStructures.DynamicDepositConfig({
-            warningThreshold: 130, // 警告阈值：130%，保证金充足的标准
-            restrictionThreshold: 120, // 限制阈值：120%，开始限制操作
-            liquidationThreshold: 110, // 清算阈值：110%，强制清算临界点
-            highRiskMultiplier: 200, // 高风险倍数：200%，高风险案件需要双倍保证金
-            mediumRiskMultiplier: 150, // 中风险倍数：150%，中等风险案件增加50%
-            lowRiskMultiplier: 120, // 低风险倍数：120%，低风险案件增加20%
-            concurrentCaseExtra: 50, // 并发案件额外：每个并发案件增加50%保证金
-            reputationDiscountThreshold: 800, // 声誉折扣门槛：800分以上享受折扣
-            reputationDiscountRate: 20, // 声誉折扣率：高声誉用户减少20%保证金
-            reputationPenaltyThreshold: 300, // 声誉惩罚门槛：300分以下增加保证金
-            reputationPenaltyRate: 50 // 声誉惩罚率：低声誉用户增加50%保证金
+            warningThreshold: 130,
+            restrictionThreshold: 120,
+            liquidationThreshold: 110,
+            highRiskMultiplier: 200,
+            mediumRiskMultiplier: 150,
+            lowRiskMultiplier: 120,
+            reputationDiscountThreshold: 800,
+            reputationDiscountRate: 20
         });
 
         // 初始化资金池
         fundPool = DataStructures.FundPool({
-            totalBalance: 0, // 初始总余额为0
-            reserveBalance: 0, // 初始储备金为0
-            rewardPool: 0, // 初始奖励池为0
-            operationalFund: 0, // 初始运营资金为0
-            emergencyFund: 0 // 初始应急资金为0
+            totalBalance: 0,
+            rewardPool: 0,
+            operationalFund: 0,
+            reserveBalance: 0
         });
     }
 
@@ -191,24 +177,20 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         // 步骤2：并发案件额外要求
         // 设计原理：防止用户同时参与过多案件，分散注意力和责任
         // 每个活跃案件增加50%的额外保证金要求
-        if (profile.activeCaseCount > 0) {
-            uint256 extraRate = profile.activeCaseCount * dynamicConfig.concurrentCaseExtra;
-            required += (baseAmount * extraRate) / 100;
+        if (profile.activeCaseCount > 1) {
+            // 简化：每个额外案件增加50%
+            uint256 extraRate = (profile.activeCaseCount - 1) * 50;
+            if (extraRate > 200) extraRate = 200; // 最多增加200%
+            required = (required * (100 + extraRate)) / 100;
         }
 
-        // 步骤3：声誉调整（激励机制）
-        // 设计原理：鼓励长期良好表现，惩罚不良行为
+        // 步骤3：声誉调整：根据用户历史表现调整保证金要求
+        // 高声誉用户可以享受保证金折扣
         uint256 reputation = userReputation[user];
         if (reputation >= dynamicConfig.reputationDiscountThreshold) {
             // 声誉好的用户享受折扣（≥800分减少20%）
-            // 公式：required = required * (100 - 20) / 100 = required * 0.8
             required = (required * (100 - dynamicConfig.reputationDiscountRate)) / 100;
-        } else if (reputation <= dynamicConfig.reputationPenaltyThreshold) {
-            // 声誉差的用户需要更多保证金（≤300分增加50%）
-            // 公式：required = required * (100 + 50) / 100 = required * 1.5
-            required = (required * (100 + dynamicConfig.reputationPenaltyRate)) / 100;
         }
-        // 中等声誉用户（300-800分）不做调整，使用基础计算结果
 
         return required;
     }
@@ -254,12 +236,13 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
             profile.operationRestricted = false;
             profile.lastWarningTime = block.timestamp; // 记录警告时间
 
-            // 发出警告事件，提醒用户注意保证金不足
-            emit Events.DepositWarning(
+            // 简化：只记录业务异常，不发出专门的警告事件
+            emit Events.BusinessProcessAnomaly(
+                0,
                 user,
-                requiredAmount,
-                totalDeposit,
-                coverage,
+                "Deposit Status Check",
+                "Warning: deposit below warning threshold",
+                "User advised to top up deposit",
                 block.timestamp
             );
         } else if (coverage >= dynamicConfig.liquidationThreshold) {
@@ -267,10 +250,13 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
             profile.status = DataStructures.DepositStatus.RESTRICTED;
             profile.operationRestricted = true; // 开始限制用户操作
 
-            // 发出操作限制事件
-            emit Events.UserOperationRestricted(
+            // 简化：只记录业务异常
+            emit Events.BusinessProcessAnomaly(
+                0,
                 user,
-                "Deposit below restriction threshold",
+                "Deposit Status Check",
+                "Restriction: deposit below restriction threshold",
+                "User operations restricted",
                 block.timestamp
             );
         } else {
@@ -282,13 +268,14 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
             _triggerLiquidation(user);
         }
 
-        // 如果状态发生变化，发出状态变更事件
+        // 如果状态发生变化，记录变化
         if (oldStatus != profile.status) {
-            emit Events.DepositStatusChanged(
+            emit Events.BusinessProcessAnomaly(
+                0,
                 user,
-                uint8(oldStatus),
-                uint8(profile.status),
-                coverage,
+                "Deposit Status Update",
+                "User deposit status changed",
+                "Status updated based on coverage",
                 block.timestamp
             );
         }
@@ -348,12 +335,12 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         // 异常检测2：验证保证金计算的合理性
         if (totalDeposit > preExitTotalDeposit) {
             // 理论上总保证金不应该在清算过程中增加
-            emit Events.SystemAnomalyWarning(
-                "FUND_MANAGEMENT",
+            emit Events.BusinessProcessAnomaly(
+                0,
+                user,
+                "User Liquidation",
                 "Total deposit increased during liquidation process",
-                4, // 高严重程度
-                address(this),
-                abi.encode(user, preExitTotalDeposit, totalDeposit, preExitFrozenAmount),
+                "Continue with warning",
                 block.timestamp
             );
         }
@@ -392,23 +379,24 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         }
 
         // 发出清算事件，记录清算详情
-        emit Events.UserLiquidated(
+        emit Events.BusinessProcessAnomaly(
+            0,
             user,
-            liquidatedAmount, // 用户实际损失的金额
-            penalty, // 被扣除的罚金
-            "Insufficient deposit coverage", // 清算原因
+            "User Liquidation",
+            "User liquidated due to insufficient deposit coverage",
+            "Assets liquidated and penalty applied",
             block.timestamp
         );
 
         // 最终状态验证
         if (profile.totalDeposit < 0) {
             // 这应该永远不会发生，但作为最后的安全检查
-            emit Events.SystemAnomalyWarning(
-                "FUND_MANAGEMENT",
+            emit Events.BusinessProcessAnomaly(
+                0,
+                user,
+                "User Liquidation",
                 "Negative total deposit after liquidation",
-                5, // 最高严重程度
-                address(this),
-                abi.encode(user, profile.totalDeposit),
+                "Force reset to zero",
                 block.timestamp
             );
             profile.totalDeposit = 0; // 强制修复
@@ -476,52 +464,29 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
             //检测到系统状态不一致！
             // 这是一个严重的系统异常，表明资金账目存在偏差
 
-            // 记录异常检测事件，便于系统监控和调试
-            emit Events.SystemStateInconsistencyDetected(
-                user,
-                0, // 不特定于某个案件
-                "FundManager._forceExitAllCases",
-                "Residual frozen amount after case exits",
-                0, // 期望的冻结金额应该为0
-                profile.frozenAmount, // 实际残余的冻结金额
-                block.timestamp
-            );
-
-            // 记录数据修复事件
-            uint256 repairedAmount = profile.frozenAmount;
-            profile.frozenAmount = 0; // 强制归零，确保状态一致性
-
-            emit Events.SystemDataRepaired(
-                user,
+            // 记录异常并修复
+            emit Events.BusinessProcessAnomaly(
                 0,
-                "FundManager._forceExitAllCases",
-                "Force reset residual frozen amount to zero",
-                repairedAmount, // 修复前的错误值
-                0, // 修复后的正确值
+                user,
+                "Force Exit Cases",
+                "Residual frozen amount after case exits",
+                "Force reset frozen amount to zero",
                 block.timestamp
             );
 
-            // 发出系统异常警告，表明这是一个需要关注的问题
-            emit Events.SystemAnomalyWarning(
-                "FUND_MANAGEMENT",
-                "Detected inconsistent frozen amount during force exit, auto-repaired",
-                3, // 中等严重程度
-                address(this),
-                abi.encode(user, repairedAmount, totalUnfrozen, initialFrozenAmount),
-                block.timestamp
-            );
+            // 强制归零，确保状态一致性
+            profile.frozenAmount = 0;
         }
 
         // 验证总解冻金额的一致性
         if (totalUnfrozen != initialFrozenAmount && initialFrozenAmount > 0) {
             // 检测到解冻金额与初始冻结金额不一致
-            emit Events.SystemStateInconsistencyDetected(
-                user,
+            emit Events.BusinessProcessAnomaly(
                 0,
-                "FundManager._forceExitAllCases",
+                user,
+                "Force Exit Cases",
                 "Total unfrozen amount mismatch with initial frozen amount",
-                initialFrozenAmount, // 期望解冻的总金额
-                totalUnfrozen, // 实际解冻的总金额
+                "Continue with warning",
                 block.timestamp
             );
         }
@@ -585,7 +550,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         // 检查提取后是否满足最低要求
         uint256 remaining = profile.totalDeposit - amount;
         if (remaining < profile.requiredAmount) {
-            revert Errors.InsufficientDynamicDeposit(
+            revert Errors.InsufficientBalance(
                 msg.sender,
                 profile.requiredAmount,
                 remaining
@@ -654,7 +619,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
             caseId,
             user,
             freezeAmount,
-            "Case processing",
+            DataStructures.RiskLevel.MEDIUM,
             block.timestamp
         );
     }
@@ -755,7 +720,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         fundPool.reserveBalance += reserveShare;
 
         emit Events.FundsTransferredToPool(
-            0,
+            address(this),
             amount,
             source,
             block.timestamp
@@ -903,8 +868,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
      */
     function registerUserDeposit(
         address user,
-        uint256 amount,
-        DataStructures.UserRole role
+        uint256 amount
     )
     external
     payable
@@ -934,9 +898,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         // 更新用户状态
         _updateUserStatus(user);
 
-        // 更新角色映射
-        userRole[user] = role;
-
         emit Events.DepositMade(
             user,
             amount,
@@ -952,7 +913,8 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable {
         _addToFundPool(msg.value, "Direct deposit");
     }
 
-    function hasUserRole(address user, DataStructures.UserRole role) external view returns (bool) {
-        return userRole[user] == role;
-    }
+    // 这个函数已经废弃，角色管理现在由ParticipantPoolManager处理
+    // function hasUserRole(address user, DataStructures.UserRole role) external view returns (bool) {
+    //     return userRole[user] == role;
+    // }
 }
