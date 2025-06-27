@@ -116,6 +116,9 @@ library DataStructures {
         string evidenceHash;    // 证据哈希：支持投票决定的证据文件哈希
         bool hasVoted;          // 投票状态：标记该验证者是否已经完成投票
         VoteChoice finalChoice; // 最终选择：质疑结束后记录的最终投票结果
+        uint256 supportVotes;   // 支持票数：认为投诉成立的投票数量
+        uint256 rejectVotes;     // 反对票数：认为投诉不成立的投票数量
+        uint256 totalVotes;      // 总投票数：已提交的投票总数
     }
 
     /**

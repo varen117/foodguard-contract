@@ -41,20 +41,20 @@ contract FoodSafetyGovernance is Pausable, Ownable {
 
     /// @notice 案件计数器 - 系统中创建的案件总数，也用作新案件的唯一ID
     /// @dev 从0开始递增，确保每个案件都有唯一标识符
-    uint256 public caseCounter;
+    uint256 public caseCounter; // 案件总数计数器
 
     /// @notice 核心模块合约地址
-    FundManager public fundManager;
-    VotingDisputeManager public votingDisputeManager;
-    RewardPunishmentManager public rewardManager;
-    ParticipantPoolManager public poolManager;
+    FundManager public fundManager; // 资金管理合约实例
+    VotingDisputeManager public votingDisputeManager; // 投票和质疑管理合约实例
+    RewardPunishmentManager public rewardManager; // 奖惩管理合约实例
+    ParticipantPoolManager public poolManager; // 参与者池管理合约实例
 
     /// @notice 案件信息映射 - 存储所有案件的核心信息
     /// @dev 键值对：caseId => CaseInfo，提供案件的完整状态追踪
-    mapping(uint256 => CaseInfo) public cases;
+    mapping(uint256 => CaseInfo) public cases; // 案件ID到案件信息的映射
 
     /// @notice 企业风险等级映射（保留，用于案件风险评估）
-    mapping(address => DataStructures.RiskLevel) public enterpriseRiskLevel;
+    mapping(address => DataStructures.RiskLevel) public enterpriseRiskLevel; // 企业地址到风险等级的映射
 
     // ==================== 结构体定义 ====================
 
@@ -62,29 +62,29 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @notice 案件信息结构体
      */
     struct CaseInfo {
-        uint256 caseId;
-        address complainant;
-        address enterprise;
-        string complaintTitle;
-        string complaintDescription;
-        string location;
-        uint256 incidentTime;
-        uint256 complaintTime;
-        DataStructures.CaseStatus status;
-        DataStructures.RiskLevel riskLevel;
-        bool complaintUpheld;
-        uint256 complainantDeposit;
-        uint256 enterpriseDeposit;
-        string complainantEvidenceHash;
-        bool isCompleted;
-        uint256 completionTime;
+        uint256 caseId; // 案件唯一标识符
+        address complainant; // 投诉者地址
+        address enterprise; // 被投诉企业地址
+        string complaintTitle; // 投诉标题
+        string complaintDescription; // 投诉详细描述
+        string location; // 事发地点
+        uint256 incidentTime; // 事发时间(Unix时间戳)
+        uint256 complaintTime; // 投诉提交时间(Unix时间戳)
+        DataStructures.CaseStatus status; // 案件当前状态
+        DataStructures.RiskLevel riskLevel; // 案件风险等级
+        bool complaintUpheld; // 投诉是否成立
+        uint256 complainantDeposit; // 投诉者实际冻结保证金数额
+        uint256 enterpriseDeposit; // 企业实际冻结保证金数额
+        string complainantEvidenceHash; // 投诉者提供的证据哈希
+        bool isCompleted; // 案件是否已完成
+        uint256 completionTime; // 案件完成时间(Unix时间戳)
     }
 
     // ==================== 修饰符 ====================
     /**
      * @notice 检查案件是否存在
      */
-    modifier caseExists(uint256 caseId) {
+    modifier caseExists(uint256 caseId) { // 案件ID
         if (cases[caseId].caseId == 0) {
             revert Errors.CaseNotFound(caseId);
         }
@@ -95,8 +95,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @notice 检查案件状态
      */
     modifier inStatus(
-        uint256 caseId,
-        DataStructures.CaseStatus requiredStatus
+        uint256 caseId, // 案件ID
+        DataStructures.CaseStatus requiredStatus // 要求的案件状态
     ) {
         if (cases[caseId].status != requiredStatus) {
             revert Errors.InvalidCaseStatus(
@@ -110,7 +110,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
 
     // ==================== 构造函数 ====================
 
-    constructor(address initialOwner) Ownable(initialOwner) {
+    constructor(address initialOwner) Ownable(initialOwner) { // 初始所有者地址
         caseCounter = 0;
     }
 
@@ -124,10 +124,10 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @param _poolManager 参与者池管理合约地址
      */
     function initializeContracts(
-        address payable _fundManager,
-        address _votingDisputeManager,
-        address _rewardManager,
-        address _poolManager
+        address payable _fundManager, // 资金管理合约地址
+        address _votingDisputeManager, // 投票和质疑管理合约地址
+        address _rewardManager, // 奖惩管理合约地址
+        address _poolManager // 参与者池管理合约地址
     ) external onlyOwner {
         if (
             _fundManager == address(0) ||
@@ -176,18 +176,18 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @return caseId 新创建案件的唯一ID
      */
     function createComplaint(
-        address enterprise,
-        string calldata complaintTitle,
-        string calldata complaintDescription,
-        string calldata location,
-        uint256 incidentTime,
-        string calldata evidenceHash,
-        uint8 riskLevel
+        address enterprise, // 被投诉企业地址
+        string calldata complaintTitle, // 投诉标题
+        string calldata complaintDescription, // 投诉详细描述
+        string calldata location, // 事发地点
+        uint256 incidentTime, // 事发时间(Unix时间戳)
+        string calldata evidenceHash, // 证据材料哈希
+        uint8 riskLevel // 风险等级数值(0-2)
     )
     external
     payable
     whenNotPaused
-    returns (uint256 caseId)
+    returns (uint256 caseId) // 返回新案件ID
     {
         // 验证输入参数
         if (enterprise == address(0)) {
@@ -203,7 +203,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         }
 
         // 验证投诉者角色权限
-        (bool complainantRegistered, DataStructures.UserRole complainantRole, bool complainantActive,) = poolManager.getUserInfo(msg.sender);
+        (bool complainantRegistered, DataStructures.UserRole complainantRole, bool complainantActive,) = poolManager.getUserInfo(msg.sender); // 投诉者注册状态, 用户角色, 激活状态, 其他信息
         if (!complainantRegistered || !complainantActive || complainantRole != DataStructures.UserRole.COMPLAINANT) {
             revert Errors.InvalidUserRole(
                 msg.sender,
@@ -213,7 +213,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         }
 
         // 验证企业角色权限
-        (bool enterpriseRegistered, DataStructures.UserRole enterpriseRole, bool enterpriseActive,) = poolManager.getUserInfo(enterprise);
+        (bool enterpriseRegistered, DataStructures.UserRole enterpriseRole, bool enterpriseActive,) = poolManager.getUserInfo(enterprise); // 企业注册状态, 用户角色, 激活状态, 其他信息
         if (!enterpriseRegistered || !enterpriseActive || enterpriseRole != DataStructures.UserRole.ENTERPRISE) {
             revert Errors.InvalidUserRole(
                 enterprise,
@@ -249,10 +249,10 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             );
         }
 
-        DataStructures.RiskLevel riskLevelEnum = DataStructures.RiskLevel(riskLevel);
+        DataStructures.RiskLevel riskLevelEnum = DataStructures.RiskLevel(riskLevel); // 风险等级枚举值
 
         // 检查用户是否可以参与新案件（基于动态保证金系统）
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
         if (!fundManager.canParticipateInCase(msg.sender, riskLevelEnum, config.minComplaintDeposit)) {
             revert Errors.InsufficientDynamicDeposit(
                 msg.sender,
@@ -271,10 +271,10 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         }
 
         // 创建新案件
-        caseId = ++caseCounter;
+        caseId = ++caseCounter; // 递增案件计数器并赋值给新案件ID
 
         // 创建案件信息
-        CaseInfo storage newCase = cases[caseId];
+        CaseInfo storage newCase = cases[caseId]; // 新案件信息存储引用
         newCase.caseId = caseId;
         newCase.complainant = msg.sender;
         newCase.enterprise = enterprise;
@@ -323,9 +323,9 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      *
      * @param caseId 案件ID
      */
-    function _lockDeposits(uint256 caseId) internal {
-        CaseInfo storage caseInfo = cases[caseId];
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
+    function _lockDeposits(uint256 caseId) internal { // 案件ID
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
 
         // 步骤1：冻结投诉者保证金
         // 冻结考虑用户的风险等级、声誉分数、并发案件等因素
@@ -384,9 +384,9 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      *
      * @param caseId 案件ID
      */
-    function _startVoting(uint256 caseId) internal {
-        CaseInfo storage caseInfo = cases[caseId];
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
+    function _startVoting(uint256 caseId) internal { // 案件ID
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
 
         // 验证投诉者角色权限
         if (!poolManager.canParticipateInCase(caseId, caseInfo.complainant, DataStructures.UserRole.COMPLAINANT)) {
@@ -407,7 +407,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         }
 
         // 确定验证者数量（基于风险等级动态调整）
-        uint256 validatorCount = config.minValidators;
+        uint256 validatorCount = config.minValidators; // 验证者数量
         if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
             validatorCount = config.maxValidators > 7 ? 7 : config.maxValidators; // 高风险案件更多验证者
         } else if (caseInfo.riskLevel == DataStructures.RiskLevel.MEDIUM) {
@@ -420,7 +420,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         }
 
         // 使用ParticipantPoolManager随机选择验证者
-        address[] memory selectedValidators = poolManager.selectValidators(caseId, validatorCount);
+        address[] memory selectedValidators = poolManager.selectValidators(caseId, validatorCount); // 选中的验证者地址数组
 
         // 将选中的验证者传递给VotingDisputeManager开始投票
         votingDisputeManager.startVotingSessionWithValidators(
@@ -448,7 +448,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @param caseId 案件ID
      */
     function endVotingAndStartChallenge(
-        uint256 caseId
+        uint256 caseId // 案件ID
     )
     external
     whenNotPaused
@@ -458,14 +458,14 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         // 结束验证阶段并获取投票结果
         votingDisputeManager.endVotingSession(caseId);
 
-        CaseInfo storage caseInfo = cases[caseId];
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 //        caseInfo.complaintUpheld = complaintUpheld; // todo 质疑完成之后再记录投票结果
 
         // 开启质疑阶段
         caseInfo.status = DataStructures.CaseStatus.CHALLENGING;
 
         // 开始质疑期
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
         votingDisputeManager.startDisputeSession(caseId, config.challengePeriod);
 
         emit Events.CaseStatusUpdated(
@@ -481,17 +481,17 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @param caseId 案件ID
      */
     function endChallengeAndProcessRewards(
-        uint256 caseId
+        uint256 caseId // 案件ID
     )
     external
     whenNotPaused
     caseExists(caseId)
     inStatus(caseId, DataStructures.CaseStatus.CHALLENGING)
     {
-        CaseInfo storage caseInfo = cases[caseId];
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
         // 结束质疑期并获取质疑者详细信息
-        bool finalResult = votingDisputeManager.endDisputeSession(
+        bool finalResult = votingDisputeManager.endDisputeSession( // 最终投诉结果
             caseId,
             caseInfo.complainant,
             caseInfo.enterprise
@@ -529,26 +529,27 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      *
      * @param caseId 案件ID
      */
-    function _processRewardsPunishments(uint256 caseId) internal {
-        CaseInfo storage caseInfo = cases[caseId];
+    function _processRewardsPunishments(uint256 caseId) internal { // 案件ID
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
         // 步骤1：获取投票结果信息
         (
-            ,
-            address[] memory validators,
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
-            ,
+            , // 案件ID(忽略)
+            address[] memory validators, // 参与投票的验证者地址数组
+            , // 支持票数(忽略)
+            , // 反对票数(忽略)
+            , // 总票数(忽略)
+            , // 开始时间(忽略)
+            , // 结束时间(忽略)
+            , // 是否活跃(忽略)
+            , // 是否完成(忽略)
+             // 投诉是否成立(忽略)
         ) = votingDisputeManager.getVotingSessionInfo(caseId);
 
         // 步骤2：构建验证者投票选择数组
-        DataStructures.VoteChoice[] memory validatorChoices = new DataStructures.VoteChoice[](validators.length);
-        for (uint256 i = 0; i < validators.length; i++) {
-            DataStructures.VoteInfo memory vote = votingDisputeManager.getValidatorVote(caseId, validators[i]);
+        DataStructures.VoteChoice[] memory validatorChoices = new DataStructures.VoteChoice[](validators.length); // 验证者投票选择数组
+        for (uint256 i = 0; i < validators.length; i++) { // 循环索引
+            DataStructures.VoteInfo memory vote = votingDisputeManager.getValidatorVote(caseId, validators[i]); // 验证者投票信息
             if (vote.hasVoted) {
                 validatorChoices[i] = vote.choice;
             } else {
@@ -558,33 +559,32 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         }
 
         // 步骤3：获取质疑者信息
-        DataStructures.ChallengeInfo[] memory challenges = votingDisputeManager.getAllChallenges(caseId);
-        address[] memory challengers = new address[](challenges.length);
-        bool[] memory challengeResults = new bool[](challenges.length);
+        DataStructures.ChallengeInfo[] memory challenges = votingDisputeManager.getAllChallenges(caseId); // 所有质疑信息数组
+        address[] memory challengers = new address[](challenges.length); // 质疑者地址数组
+        bool[] memory challengeResults = new bool[](challenges.length); // 质疑结果数组
 
         // 获取质疑会话信息以确定结果是否改变
         (
-            uint256 caseIdDispute,
-            bool disputeIsActive,
-            bool disputeIsCompleted,
-            uint256 disputeStartTime,
-            uint256 disputeEndTime,
-            uint256 totalChallenges,
-            bool resultChanged
+            uint256 caseIdDispute, // 质疑案件ID
+            bool disputeIsActive, // 质疑是否活跃
+            bool disputeIsCompleted, // 质疑是否完成
+            uint256 disputeStartTime, // 质疑开始时间
+            uint256 disputeEndTime, // 质疑结束时间
+            uint256 totalChallenges, // 总质疑数量
         ) = votingDisputeManager.getDisputeSessionInfo(caseId);
 
         // 步骤4：分析质疑结果
-        for (uint256 i = 0; i < challenges.length; i++) {
+        for (uint256 i = 0; i < challenges.length; i++) { // 循环索引
             challengers[i] = challenges[i].challenger;
 
-            // 判断质疑是否成功
-            if (resultChanged) {
-                // 如果结果改变了，说明反对验证者的质疑成功
-                challengeResults[i] = (challenges[i].choice == DataStructures.ChallengeChoice.OPPOSE_VALIDATOR);
-            } else {
-                // 如果结果没改变，说明支持验证者的质疑成功
-                challengeResults[i] = (challenges[i].choice == DataStructures.ChallengeChoice.SUPPORT_VALIDATOR);
-            }
+//            // 判断质疑是否成功
+//            if (resultChanged) {
+//                // 如果结果改变了，说明反对验证者的质疑成功
+//                challengeResults[i] = (challenges[i].choice == DataStructures.ChallengeChoice.OPPOSE_VALIDATOR);
+//            } else {
+//                // 如果结果没改变，说明支持验证者的质疑成功
+//                challengeResults[i] = (challenges[i].choice == DataStructures.ChallengeChoice.SUPPORT_VALIDATOR);
+//            }
         }
 
         // 步骤5：调用奖惩管理器进行综合计算
@@ -608,8 +608,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @notice 步骤7: 完成案件
      * @param caseId 案件ID
      */
-    function _completeCase(uint256 caseId) internal {
-        CaseInfo storage caseInfo = cases[caseId];
+    function _completeCase(uint256 caseId) internal { // 案件ID
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
         caseInfo.status = DataStructures.CaseStatus.COMPLETED;
         caseInfo.isCompleted = true;
@@ -643,10 +643,10 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @notice 获取受影响的用户列表
      */
     function _getAffectedUsers(
-        uint256 caseId
+        uint256 caseId // 案件ID
     ) internal view returns (address[] memory) {
-        CaseInfo storage caseInfo = cases[caseId];
-        address[] memory affected = new address[](2);
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
+        address[] memory affected = new address[](2); // 受影响用户地址数组
         affected[0] = caseInfo.complainant;
         affected[1] = caseInfo.enterprise;
         return affected;
@@ -658,7 +658,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @notice 获取案件信息
      */
     function getCaseInfo(
-        uint256 caseId
+        uint256 caseId // 案件ID
     ) external view returns (CaseInfo memory) {
         return cases[caseId];
     }
@@ -675,7 +675,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     /**
      * @notice 暂停/恢复合约
      */
-    function setPaused(bool _paused) external onlyOwner {
+    function setPaused(bool _paused) external onlyOwner { // 是否暂停标志
         if (_paused) {
             _pause();
         } else {
@@ -688,8 +688,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @notice 更新企业风险等级
      */
     function updateEnterpriseRiskLevel(
-        address enterprise,
-        DataStructures.RiskLevel newLevel
+        address enterprise, // 企业地址
+        DataStructures.RiskLevel newLevel // 新的风险等级
     ) external onlyOwner {
         if (!poolManager.isEnterpriseRegistered(enterprise)) {
             revert Errors.EnterpriseNotRegistered(enterprise);
@@ -710,10 +710,10 @@ contract FoodSafetyGovernance is Pausable, Ownable {
      * @notice 紧急取消案件
      */
     function emergencyCancelCase(
-        uint256 caseId,
-        string calldata reason
+        uint256 caseId, // 案件ID
+        string calldata reason // 取消原因
     ) external onlyOwner caseExists(caseId) {
-        CaseInfo storage caseInfo = cases[caseId];
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
         if (caseInfo.isCompleted) {
             revert Errors.CaseAlreadyCompleted(caseId);
