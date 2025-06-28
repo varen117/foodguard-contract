@@ -12,7 +12,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @author Food Safety Governance Team
  * @notice 统一的参与者池管理合约
  * @dev 管理所有用户的角色分类和参与状态，支持Chainlink VRF随机选择
- * 
+ *
  * 核心功能：
  * 1. 角色管理：COMPLAINANT、ENTERPRISE、DAO_MEMBER三种角色
  * 2. 统一池管理：所有参与者在同一个池中按角色分类
@@ -77,7 +77,6 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
     event UserRoleUpdated(address indexed user, DataStructures.UserRole oldRole, DataStructures.UserRole newRole);
     event ValidatorsSelected(uint256 indexed caseId, address[] validators, uint256 randomSeed);
     event ChallengersSelected(uint256 indexed caseId, address targetValidator, address[] challengers);
-    event UserParticipationRegistered(uint256 indexed caseId, address indexed user, DataStructures.UserRole role);
 
     // ==================== 修饰符 ====================
 
@@ -97,7 +96,7 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
 
     // ==================== 构造函数 ====================
 
-    constructor(address _admin) Ownable(_admin) {
+    constructor(address _admin, uint256 _subscriptionId) Ownable(_admin) {
         // 初始化验证者配置
         validatorConfig = ValidatorConfig({
             minValidators: 3,      // 最少3个验证者（奇数）
@@ -113,6 +112,7 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
 
         // 初始化随机种子
         randomSeed = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender)));
+        s_subscriptionId = _subscriptionId;
     }
 
     // ==================== 用户注册和角色管理 ====================
@@ -186,29 +186,21 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
      * @param requiredCount 需要的验证者数量（奇数）
      * @return validators 选中的验证者地址数组
      */
-    function selectValidators(uint256 caseId, uint256 requiredCount) 
-        external 
-        onlyGovernance 
-        returns (address[] memory validators) 
+    function selectValidators(uint256 caseId, uint256[] calldata randomWords)
+    external
+    onlyGovernance
+    returns (address[] memory validators)
     {
         // 验证参数
-        require(requiredCount % 2 == 1, "Validator count must be odd");
-        require(requiredCount >= validatorConfig.minValidators, "Below minimum validators");
-        require(requiredCount <= validatorConfig.maxValidators, "Above maximum validators");
+        require(randomWords.length > 0, "Random words cannot be empty");
 
         // 获取可用的DAO成员作为验证者（排除已参与此案件的用户）
-        address[] memory availableValidators = _getAvailableParticipants(caseId, DataStructures.UserRole.DAO_MEMBER);
-        require(availableValidators.length >= requiredCount, "Insufficient available validators");
-
-        // 随机选择验证者
-        validators = _randomSelect(availableValidators, requiredCount);
-
-        // 记录参与状态：这些DAO成员在此案件中担任验证者角色
-        for (uint256 i = 0; i < validators.length; i++) {
-            _recordParticipation(caseId, validators[i], DataStructures.UserRole.DAO_MEMBER);
+        address[] memory availableValidators = _getAvailableParticipants(caseId, DataStructures.UserRole.DAO_MEMBER, randomWords);
+        if (availableValidators.length < validatorConfig.minValidators) {
+            revert Errors.InsufficientAvailableParticipants( caseId);
         }
-
-        emit ValidatorsSelected(caseId, validators, randomSeed);
+        // 发送验证者已选定事件
+        emit ValidatorsSelected(caseId, availableValidators, randomSeed);
         return validators;
     }
 
@@ -220,21 +212,19 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
      * @return challengers 选中的质疑者地址数组
      */
     function selectChallengers(uint256 caseId, address targetValidator, uint256 requiredCount)
-        external
-        onlyGovernance
-        returns (address[] memory challengers)
+    external
+    onlyGovernance
+    returns (address[] memory challengers)
     {
         // 验证参数
         require(requiredCount % 2 == 0, "Challenger count must be even");
         require(requiredCount <= challengerConfig.maxChallengersPerValidator, "Above maximum challengers");
         require(caseParticipation[caseId][targetValidator], "Target validator not in case");
 
-        // 获取可用的质疑者（排除已参与此案件的用户，并满足声誉要求）
+        // 获取可用的质疑者（排除已参与此案件的用户，并满足声誉要求）todo adsf
         address[] memory availableChallengers = _getAvailableChallengersForValidator(caseId, targetValidator);
         require(availableChallengers.length >= requiredCount, "Insufficient available challengers");
 
-        // 随机选择质疑者
-        challengers = _randomSelect(availableChallengers, requiredCount);
 
         // 记录参与状态
         for (uint256 i = 0; i < challengers.length; i++) {
@@ -265,13 +255,13 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
         if (isInRolePool[role][user]) {
             uint256 index = userPoolIndex[role][user];
             uint256 lastIndex = rolePools[role].length - 1;
-            
+
             if (index != lastIndex) {
                 address lastUser = rolePools[role][lastIndex];
                 rolePools[role][index] = lastUser;
                 userPoolIndex[role][lastUser] = index;
             }
-            
+
             rolePools[role].pop();
             delete userPoolIndex[role][user];
             isInRolePool[role][user] = false;
@@ -281,42 +271,45 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
     /**
      * @notice 获取可用参与者（排除已参与案件的用户）
      */
-    function _getAvailableParticipants(uint256 caseId, DataStructures.UserRole role) 
-        internal 
-        view 
-        returns (address[] memory available) 
+    function _getAvailableParticipants(
+        uint256 caseId,
+        DataStructures.UserRole role,
+        uint256[] calldata randomWords
+    )
+    internal
+    view
+    returns (address[] memory available)
     {
         address[] memory rolePool = rolePools[role];
         uint256 availableCount = 0;
-
+        address[] memory temporaryAvailable;
+        address[] memory availableParticipants;
         // 第一次遍历：计算可用用户数量
         for (uint256 i = 0; i < rolePool.length; i++) {
             address user = rolePool[i];
             if (isUserActive[user] && !caseParticipation[caseId][user]) {
                 availableCount++;
+                temporaryAvailable.push(user);
             }
         }
 
-        // 第二次遍历：填充可用用户数组
-        available = new address[](availableCount);
-        uint256 index = 0;
-        for (uint256 i = 0; i < rolePool.length; i++) {
-            address user = rolePool[i];
-            if (isUserActive[user] && !caseParticipation[caseId][user]) {
-                available[index++] = user;
-            }
+        for(uint i=0; i < randomWords.length; i++) {
+            address user = temporaryAvailable[randomWords[i] % availableCount];
+            availableParticipants.push(user);
+            // 记录参与状态：这些DAO成员在此案件中担任验证者角色
+            caseParticipation[caseId][user] = true;
+            caseUserRole[caseId][user] = role;
         }
-
-        return available;
+        return availableParticipants;
     }
 
     /**
      * @notice 获取可用的质疑者（额外检查声誉要求）
      */
     function _getAvailableChallengersForValidator(uint256 caseId, address targetValidator)
-        internal
-        view
-        returns (address[] memory available)
+    internal
+    view
+    returns (address[] memory available)
     {
         address[] memory daoMembers = rolePools[DataStructures.UserRole.DAO_MEMBER];
         uint256 availableCount = 0;
@@ -324,8 +317,8 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
         // 第一次遍历：计算可用质疑者数量
         for (uint256 i = 0; i < daoMembers.length; i++) {
             address user = daoMembers[i];
-            if (isUserActive[user] && 
-                !caseParticipation[caseId][user] && 
+            if (isUserActive[user] &&
+                !caseParticipation[caseId][user] &&
                 user != targetValidator &&
                 userReputation[user] >= challengerConfig.minChallengerReputation) {
                 availableCount++;
@@ -337,8 +330,8 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
         uint256 index = 0;
         for (uint256 i = 0; i < daoMembers.length; i++) {
             address user = daoMembers[i];
-            if (isUserActive[user] && 
-                !caseParticipation[caseId][user] && 
+            if (isUserActive[user] &&
+                !caseParticipation[caseId][user] &&
                 user != targetValidator &&
                 userReputation[user] >= challengerConfig.minChallengerReputation) {
                 available[index++] = user;
@@ -348,66 +341,20 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
         return available;
     }
 
-    /**
-     * @notice 随机选择用户（将来替换为Chainlink VRF）
-     * @dev TODO: 集成Chainlink VRF获得真正的随机性
-     */
-    function _randomSelect(address[] memory candidates, uint256 count) 
-        internal 
-        returns (address[] memory selected) 
-    {
-        require(candidates.length >= count, "Insufficient candidates");
-        
-        selected = new address[](count);
-        bool[] memory used = new bool[](candidates.length);
-
-        for (uint256 i = 0; i < count; i++) {
-            // 更新随机种子
-            randomSeed = uint256(keccak256(abi.encodePacked(
-                randomSeed,
-                block.timestamp,
-                block.prevrandao,
-                i,
-                candidates.length
-            )));
-
-            uint256 index = randomSeed % candidates.length;
-            
-            // 找到未使用的候选者
-            while (used[index]) {
-                index = (index + 1) % candidates.length;
-            }
-
-            selected[i] = candidates[index];
-            used[index] = true;
-        }
-
-        return selected;
-    }
-
-    /**
-     * @notice 记录用户参与案件
-     */
-    function _recordParticipation(uint256 caseId, address user, DataStructures.UserRole role) internal {
-        caseParticipation[caseId][user] = true;
-        caseUserRole[caseId][user] = role;
-        emit UserParticipationRegistered(caseId, user, role);
-    }
-
     // ==================== 查询函数 ====================
 
     /**
      * @notice 检查用户是否可以参与案件
      */
-    function canParticipateInCase(uint256 caseId, address user, DataStructures.UserRole requiredRole) 
-        external 
-        view 
-        returns (bool) 
+    function canParticipateInCase(uint256 caseId, address user, DataStructures.UserRole requiredRole)
+    external
+    view
+    returns (bool)
     {
-        return isRegistered[user] && 
-               isUserActive[user] && 
-               userRoles[user] == requiredRole && 
-               !caseParticipation[caseId][user];
+        return isRegistered[user] &&
+        isUserActive[user] &&
+        userRoles[user] == requiredRole &&
+            !caseParticipation[caseId][user];
     }
 
     /**
@@ -466,8 +413,8 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
      */
     function getTotalUsers() external view returns (uint256) {
         return rolePools[DataStructures.UserRole.COMPLAINANT].length +
-               rolePools[DataStructures.UserRole.ENTERPRISE].length +
-               rolePools[DataStructures.UserRole.DAO_MEMBER].length;
+        rolePools[DataStructures.UserRole.ENTERPRISE].length +
+            rolePools[DataStructures.UserRole.DAO_MEMBER].length;
     }
 
     // ==================== 管理函数 ====================
@@ -488,7 +435,7 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
         require(newConfig.defaultValidators % 2 == 1, "Default validators must be odd");
         require(newConfig.minValidators <= newConfig.defaultValidators, "Invalid config");
         require(newConfig.defaultValidators <= newConfig.maxValidators, "Invalid config");
-        
+
         validatorConfig = newConfig;
     }
 
@@ -505,7 +452,7 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
      */
     function batchUpdateReputation(address[] calldata users, uint256[] calldata reputations) external onlyGovernance {
         require(users.length == reputations.length, "Array length mismatch");
-        
+
         for (uint256 i = 0; i < users.length; i++) {
             if (isRegistered[users[i]]) {
                 userReputation[users[i]] = reputations[i];
@@ -522,4 +469,4 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
             delete caseUserRole[caseId][users[i]];
         }
     }
-} 
+}

@@ -53,6 +53,7 @@ library Errors {
     error ValidatorNotParticipating(address validator, uint256 caseId);
     error InsufficientValidators(uint256 current, uint256 required);
     error NotAuthorizedValidator(address user);
+    error InsufficientAvailableParticipants(uint256 caseId);
 
     // ==================== 质疑相关错误 ====================
 

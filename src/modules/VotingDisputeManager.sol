@@ -174,10 +174,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         session.isCompleted = false;
 
         // 发出验证者选择事件
-        emit Events.ValidatorsSelected(caseId, selectedValidators, block.timestamp);
-
-        // 发出投票期开始事件
-        emit Events.VotingPhaseStarted(caseId, session.endTime, block.timestamp);
+        emit Events.ValidatorsSelected(caseId, selectedValidators,session.startTime, session.endTime , block.timestamp);
 
         return selectedValidators;
     }

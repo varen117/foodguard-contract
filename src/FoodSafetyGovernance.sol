@@ -16,6 +16,11 @@ import "./modules/ParticipantPoolManager.sol"; // 参与者池管理模块
 import "@openzeppelin/contracts/utils/Pausable.sol"; // 暂停功能，用于紧急情况
 import "@openzeppelin/contracts/access/Ownable.sol"; // 所有权管理
 
+// 导入chainlink模块
+import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
+import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+
+
 /**
  * @title FoodSafetyGovernance
  * @author Food Safety Governance Team
@@ -36,7 +41,15 @@ import "@openzeppelin/contracts/access/Ownable.sol"; // 所有权管理
  * 步骤4：结束投票并开始质疑 → 步骤5：结束质疑并进入奖惩 →
  * 步骤6：处理奖惩 → 步骤7：完成案件
  */
-contract FoodSafetyGovernance is Pausable, Ownable {
+contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
+    // ==================== 状态变量VRF =================
+    // vrf,也可以用构造函数初始化它们
+    uint256 private s_subscriptionId;
+    address private vrfCoordinator = 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B;
+    bytes32 private s_keyHash = 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
+    uint32 private callbackGasLimit = 40000;
+    uint16 private requestConfirmations = 3;
+
     // ==================== 状态变量 ====================
 
     /// @notice 案件计数器 - 系统中创建的案件总数，也用作新案件的唯一ID
@@ -56,6 +69,8 @@ contract FoodSafetyGovernance is Pausable, Ownable {
     /// @notice 企业风险等级映射（保留，用于案件风险评估）
     mapping(address => DataStructures.RiskLevel) public enterpriseRiskLevel; // 企业地址到风险等级的映射
 
+    /// @notice Chainlink requestId => caseId
+    mapping(uint256 => uint256) public caseRequestIds;
     // ==================== 结构体定义 ====================
 
     /**
@@ -419,9 +434,33 @@ contract FoodSafetyGovernance is Pausable, Ownable {
             validatorCount += 1;
         }
 
-        // 使用ParticipantPoolManager随机选择验证者
-        address[] memory selectedValidators = poolManager.selectValidators(caseId, validatorCount); // 选中的验证者地址数组
+        uint256 requestId = this.sendRandomWordsRequest(validatorCount); // 发送请求获取随机数
+        caseRequestIds[requestId] = caseId; // 将请求ID与案件ID关联
+    }
 
+    // VRF获取随机数
+    function sendRandomWordsRequest(uint32 _numWords) external returns (uint256) {
+        // 获取随机数（组装请求参数）
+        VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest({
+            keyHash: s_keyHash,//chainlink中VRF创建的订阅 keyhash
+            subId: s_subscriptionId, // VRF订阅ID
+            requestConfirmations: requestConfirmations, // 请求确认数
+            callbackGasLimit: callbackGasLimit, // 回调gas限制
+            numWords: _numWords, //获取的随机数个数
+            extraArgs: VRFV2PlusClient._argsToBytes(
+                VRFV2PlusClient.ExtraArgsV1({nativePayment: false}) // 将nativePayment设置为true，使用Sepolia ETH而不是LINK来支付VRF请求
+            )
+        });
+        // 向 Chainlink VRF 协调器请求随机数，返回一个唯一的 requestId 用于追踪这次随机数请求
+        return s_vrfCoordinator.requestRandomWords(request);
+    }
+
+    // 选择随机验证者并开启投票
+    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
+        uint256 caseId = caseRequestIds[requestId]; // 获取与请求ID关联的案件ID
+        // 使用ParticipantPoolManager随机选择验证者
+        address[] memory selectedValidators = poolManager.selectValidators(caseId, randomWords); // 选中的验证者地址数组
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
         // 将选中的验证者传递给VotingDisputeManager开始投票
         votingDisputeManager.startVotingSessionWithValidators(
             caseId,
@@ -430,6 +469,7 @@ contract FoodSafetyGovernance is Pausable, Ownable {
         );
 
         // 更新案件状态
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
         caseInfo.status = DataStructures.CaseStatus.VOTING;
 
         emit Events.CaseStatusUpdated(

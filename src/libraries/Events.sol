@@ -10,7 +10,7 @@ import "./DataStructures.sol";
  */
 library Events {
     // ==================== 用户管理事件 ====================
-    
+
     event UserRegistered(
         address indexed user,
         bool isEnterprise,
@@ -19,7 +19,7 @@ library Events {
     );
 
     // ==================== 案件管理事件 ====================
-    
+
     event ComplaintCreated(
         uint256 indexed caseId,
         address indexed complainant,
@@ -45,17 +45,14 @@ library Events {
     );
 
     // ==================== 投票管理事件 ====================
-    
+
     event ValidatorsSelected(
         uint256 indexed caseId,
         address[] validators,
-        uint256 timestamp
-    );
-
-    event VotingPhaseStarted(
-        uint256 indexed caseId,
+        uint256 startTime,
         uint256 endTime,
         uint256 timestamp
+
     );
 
     event VoteSubmitted(
@@ -74,7 +71,7 @@ library Events {
     );
 
     // ==================== 质疑管理事件 ====================
-    
+
     event ChallengePhaseStarted(
         uint256 indexed caseId,
         uint256 endTime,
@@ -121,7 +118,7 @@ library Events {
     );
 
     // ==================== 奖惩管理事件 ====================
-    
+
     event RewardPunishmentCalculationStarted(
         uint256 indexed caseId,
         bool complaintUpheld,
@@ -145,7 +142,7 @@ library Events {
     );
 
     // ==================== 资金管理事件 ====================
-    
+
     event DepositFrozen(
         uint256 indexed caseId,
         address indexed user,
@@ -190,7 +187,7 @@ library Events {
     );
 
     // ==================== 系统监控事件 ====================
-    
+
     event BusinessProcessAnomaly(
         uint256 indexed caseId,
         address indexed user,
