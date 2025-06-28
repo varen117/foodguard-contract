@@ -27,11 +27,13 @@ contract DeployFoodSafetyGovernance is Script {
     address public deployer;
     
     function setUp() public {
-        deployer = vm.envAddress("DEPLOYER_ADDRESS");
+        // 使用默认的 Anvil 账户地址
+        deployer = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
     }
     
     function run() public {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        // 使用默认的 Anvil 私钥
+        uint256 deployerPrivateKey = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
         
         vm.startBroadcast(deployerPrivateKey);
         

@@ -61,7 +61,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     // ==================== 状态变量VRF =================
     // vrf,也可以用构造函数初始化它们
     uint256 private s_subscriptionId;
-    address private vrfCoordinator = 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B;
+    address private vrfCoordinator;
     bytes32 private s_keyHash = 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
     uint32 private callbackGasLimit = 40000;
     uint16 private requestConfirmations = 3;
@@ -151,9 +151,14 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
 
     // ==================== 构造函数 ====================
 
-    constructor(address initialOwner) VRFConsumerBaseV2Plus(vrfCoordinator) { // 初始所有者地址
+    constructor(address initialOwner) VRFConsumerBaseV2Plus(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266) { // 初始所有者地址
+        if (initialOwner == address(0)) {
+            revert Errors.ZeroAddress();
+        }
         _admin = initialOwner;
         caseCounter = 0;
+        // 对于本地测试，使用第一个Anvil测试账户作为模拟VRF协调器
+        vrfCoordinator = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
     }
 
     // ==================== 初始化函数 ====================
