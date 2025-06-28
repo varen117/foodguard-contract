@@ -50,8 +50,6 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
     /// @notice 用户声誉分数 user => reputation
     mapping(address => uint256) public userReputation;
 
-    /// @notice 随机数种子（将来替换为Chainlink VRF）
-    uint256 private randomSeed;
 
     // ==================== 配置参数 ====================
 
@@ -75,7 +73,7 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
 
     event UserRegistered(address indexed user, DataStructures.UserRole role, uint256 timestamp);
     event UserRoleUpdated(address indexed user, DataStructures.UserRole oldRole, DataStructures.UserRole newRole);
-    event ValidatorsSelected(uint256 indexed caseId, address[] validators, uint256 randomSeed);
+    event ValidatorsSelected(uint256 indexed caseId, address[] validators);
     event ChallengersSelected(uint256 indexed caseId, address targetValidator, address[] challengers);
 
     // ==================== 修饰符 ====================
@@ -96,7 +94,7 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
 
     // ==================== 构造函数 ====================
 
-    constructor(address _admin, uint256 _subscriptionId) Ownable(_admin) {
+    constructor(address _admin) Ownable(_admin) {
         // 初始化验证者配置
         validatorConfig = ValidatorConfig({
             minValidators: 3,      // 最少3个验证者（奇数）
@@ -110,9 +108,6 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
             minChallengerReputation: 500   // 质疑者最低声誉500分
         });
 
-        // 初始化随机种子
-        randomSeed = uint256(keccak256(abi.encodePacked(block.timestamp, block.prevrandao, msg.sender)));
-        s_subscriptionId = _subscriptionId;
     }
 
     // ==================== 用户注册和角色管理 ====================
@@ -183,7 +178,6 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
     /**
      * @notice 为案件随机选择验证者
      * @param caseId 案件ID
-     * @param requiredCount 需要的验证者数量（奇数）
      * @return validators 选中的验证者地址数组
      */
     function selectValidators(uint256 caseId, uint256[] calldata randomWords)
@@ -200,39 +194,8 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
             revert Errors.InsufficientAvailableParticipants( caseId);
         }
         // 发送验证者已选定事件
-        emit ValidatorsSelected(caseId, availableValidators, randomSeed);
+        emit ValidatorsSelected(caseId, availableValidators);
         return validators;
-    }
-
-    /**
-     * @notice 为特定验证者随机选择质疑者
-     * @param caseId 案件ID
-     * @param targetValidator 被质疑的验证者
-     * @param requiredCount 需要的质疑者数量（偶数）
-     * @return challengers 选中的质疑者地址数组
-     */
-    function selectChallengers(uint256 caseId, address targetValidator, uint256 requiredCount)
-    external
-    onlyGovernance
-    returns (address[] memory challengers)
-    {
-        // 验证参数
-        require(requiredCount % 2 == 0, "Challenger count must be even");
-        require(requiredCount <= challengerConfig.maxChallengersPerValidator, "Above maximum challengers");
-        require(caseParticipation[caseId][targetValidator], "Target validator not in case");
-
-        // 获取可用的质疑者（排除已参与此案件的用户，并满足声誉要求）todo adsf
-        address[] memory availableChallengers = _getAvailableChallengersForValidator(caseId, targetValidator);
-        require(availableChallengers.length >= requiredCount, "Insufficient available challengers");
-
-
-        // 记录参与状态
-        for (uint256 i = 0; i < challengers.length; i++) {
-            _recordParticipation(caseId, challengers[i], DataStructures.UserRole.DAO_MEMBER);
-        }
-
-        emit ChallengersSelected(caseId, targetValidator, challengers);
-        return challengers;
     }
 
     // ==================== 内部函数 ====================
@@ -277,7 +240,6 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
         uint256[] calldata randomWords
     )
     internal
-    view
     returns (address[] memory available)
     {
         address[] memory rolePool = rolePools[role];
@@ -289,13 +251,13 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
             address user = rolePool[i];
             if (isUserActive[user] && !caseParticipation[caseId][user]) {
                 availableCount++;
-                temporaryAvailable.push(user);
+                temporaryAvailable[i] = user;
             }
         }
 
         for(uint i=0; i < randomWords.length; i++) {
             address user = temporaryAvailable[randomWords[i] % availableCount];
-            availableParticipants.push(user);
+            availableParticipants[i] = user;
             // 记录参与状态：这些DAO成员在此案件中担任验证者角色
             caseParticipation[caseId][user] = true;
             caseUserRole[caseId][user] = role;

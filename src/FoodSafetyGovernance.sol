@@ -66,8 +66,7 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
     /// @dev 键值对：caseId => CaseInfo，提供案件的完整状态追踪
     mapping(uint256 => CaseInfo) public cases; // 案件ID到案件信息的映射
 
-    /// @notice 企业风险等级映射（保留，用于案件风险评估）
-    mapping(address => DataStructures.RiskLevel) public enterpriseRiskLevel; // 企业地址到风险等级的映射
+
 
     /// @notice Chainlink requestId => caseId
     mapping(uint256 => uint256) public caseRequestIds;
@@ -125,7 +124,7 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
 
     // ==================== 构造函数 ====================
 
-    constructor(address initialOwner) Ownable(initialOwner) { // 初始所有者地址
+    constructor(address initialOwner) Ownable(initialOwner) VRFConsumerBaseV2Plus(vrfCoordinator) { // 初始所有者地址
         caseCounter = 0;
     }
 
@@ -572,8 +571,6 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
         (mapping(DataStructures.UserRole => address[]) rewardMember,
             mapping(DataStructures.UserRole => address[]) punishMember) =
                             votingDisputeManager.getVotingRewardAndPunishmentMembers(caseId); // 获取投票奖励和惩罚成员列表
-        // 获取投诉是否成立complaintUpheld、风险等级riskLevel、
-        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
         // 步骤5：调用奖惩管理器进行综合计算
         rewardManager.processCaseRewardPunishment(
@@ -667,27 +664,7 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
 
     }
 
-    /**
-     * @notice 更新企业风险等级
-     */
-    function updateEnterpriseRiskLevel(
-        address enterprise, // 企业地址
-        DataStructures.RiskLevel newLevel // 新的风险等级
-    ) external onlyOwner {
-        if (!poolManager.isEnterpriseRegistered(enterprise)) {
-            revert Errors.EnterpriseNotRegistered(enterprise);
-        }
 
-        enterpriseRiskLevel[enterprise] = newLevel;
-
-        emit Events.RiskWarningPublished(
-            enterprise,
-            newLevel,
-            "Risk level updated by admin",
-            0,
-            block.timestamp
-        );
-    }
 
     /**
      * @notice 紧急取消案件

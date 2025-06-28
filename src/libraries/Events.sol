@@ -151,13 +151,6 @@ library Events {
         uint256 timestamp
     );
 
-    event DepositReleased(
-        uint256 indexed caseId,
-        address indexed user,
-        uint256 amount,
-        uint256 timestamp
-    );
-
     event DepositUnfrozen(
         uint256 indexed caseId,
         address indexed user,
@@ -197,36 +190,11 @@ library Events {
         uint256 timestamp
     );
 
-    event SystemAnomalyWarning(
-        string systemComponent,
-        string description,
-        uint256 severity,
-        address triggeredBy,
-        bytes data,
-        uint256 timestamp
-    );
-
-    event UserIntegrityStatusUpdated(
-        uint256 indexed caseId,
-        address indexed user,
-        uint8 oldStatus,
-        uint8 newStatus,
-        uint8 rewardPunishmentStatus,
-        uint256 timestamp
-    );
-
     event RiskWarningPublished(
         address indexed enterprise,
         DataStructures.RiskLevel riskLevel,
         string reason,
         uint256 additionalInfo,
-        uint256 timestamp
-    );
-
-    event HighRiskCaseProcessed(
-        uint256 indexed caseId,
-        uint256 totalLockedAmount,
-        address[] affectedUsers,
         uint256 timestamp
     );
 

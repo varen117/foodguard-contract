@@ -718,14 +718,5 @@ contract RewardPunishmentManager is Ownable {
         fundManager = _fundManager;
     }
 
-    /**
-     * @notice 更新用户声誉分数
-     */
-    function updateUserReputation(
-        address user,
-        uint256 newScore
-    ) external onlyGovernance {
-        userStatuses[user].reputationScore = newScore;
-        userStatuses[user].lastActiveTime = block.timestamp;
-    }
+
 }

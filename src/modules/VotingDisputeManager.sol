@@ -66,7 +66,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
     mapping(address => mapping(uint256 => bool)) public userDisputeHistory;
 
     /// @notice 验证者被质疑次数统计映射 (验证者地址 => 被质疑次数)
-    mapping(address => uint256) public validatorDisputeCount;
+
 
     /// @notice 质疑者成功质疑次数统计映射 (质疑者地址 => 成功次数)
     mapping(address => uint256) public challengerSuccessCount;
@@ -225,7 +225,10 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
             reason: reason,
             evidenceHash: evidenceHash,
             hasVoted: true,
-            finalChoice: choice
+            finalChoice: choice,
+            supportVotes: 0,
+            rejectVotes: 0,
+            totalVotes: 0
         });
 
         // 更新投票统计
@@ -364,7 +367,6 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
 
         // 更新全局统计数据
         userDisputeHistory[msg.sender][caseId] = true;
-        validatorDisputeCount[targetValidator]++;
         challengerTotalCount[msg.sender]++;
 
         // 发出质疑提交事件
@@ -397,40 +399,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         return newResult;
     }
 
-    /**
-     * @notice 处理质疑者结果记录
-     * @dev 由于质疑不再需要保证金，此函数仅用于记录质疑结果
-     */
-    function processDisputeUnfreeze(uint256 caseId) external onlyGovernance { // 案件ID
-        DisputeSession storage session = disputeSessions[caseId]; // 质疑会话存储引用
 
-        // 验证质疑会话是否已经完成
-        if (!session.isCompleted) {
-            revert Errors.InvalidCaseStatus(caseId, 0, 1);
-        }
-
-        // 验证质疑会话是否已经不再活跃
-        if (session.isActive) {
-            revert Errors.InvalidCaseStatus(caseId, 1, 0);
-        }
-
-        // 遍历所有质疑，记录结果
-        for (uint256 i = 0; i < session.challenges.length; i++) { // 循环索引
-            DataStructures.ChallengeInfo storage challenge = session.challenges[i]; // 质疑信息存储引用
-            address challenger = challenge.challenger; // 质疑者地址
-            address targetValidator = challenge.targetValidator; // 目标验证者地址
-
-            // 判断质疑是否成功，用于事件记录
-            DataStructures.ChallengeVotingInfo storage challengeInfo = session.challengeVotingInfo[targetValidator]; // 质疑投票信息存储引用
-            bool isSuccessful = challengeInfo.opponents.length > challengeInfo.supporters.length; // 质疑是否成功
-
-            // 发出质疑结果处理事件（不再涉及保证金解冻）
-            emit Events.ChallengeResultProcessed(caseId, challenger, targetValidator, isSuccessful, block.timestamp);
-        }
-
-        // 发出质疑处理完成事件
-        emit Events.DepositUnfrozen(caseId, address(this), session.challenges.length, block.timestamp);
-    }
 
     // ==================== 内部函数 ====================
 
@@ -457,13 +426,13 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         address enterpriseAddress
     ) internal returns (bool, bool){ // 质疑结果内存结构体
         // 简化实现：基于质疑会话中的信息处理
-        DataStructures.VotingSession votingSession = votingSessions[caseId];
+        DataStructures.VotingSession storage votingSession = votingSessions[caseId];
 
         // 遍历所有质疑，统计结果
         for (uint256 i = 0; i < session.challenges.length; i++) { // 循环索引
             DataStructures.ChallengeInfo storage challenge = session.challenges[i]; // 质疑信息存储引用
             address targetValidator = challenge.targetValidator; // 目标验证者地址
-            DataStructures.VoteInfo voteInfo = votingSession.votes[targetValidator];
+            DataStructures.VoteInfo memory voteInfo = votingSession.votes[targetValidator];
             DataStructures.ChallengeVotingInfo storage challengeInfo = session.challengeVotingInfo[targetValidator]; // 质疑投票信息存储引用
 
             // 检查是否有质疑且反对者多于支持者（质疑成功）
@@ -555,8 +524,8 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
      * @param 案件ID
      */
     function getVotingRewardAndPunishmentMembers(uint256 caseId) external view returns (
-        mapping(DataStructures.UserRole => address[]),
-        mapping(DataStructures.UserRole => address[])) {
+        mapping(DataStructures.UserRole => address[]) memory,
+        mapping(DataStructures.UserRole => address[]) memory) {
         return (rewardMember[caseId], punishMember[caseId]);
     }
     /**
@@ -637,30 +606,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         return (totalRewardedDAO, totalPunishedDAO, complainantRewarded, enterprisePunished);
     }
 
-    /**
-     * @notice 检查是否可以进行质疑结果处理
-     */
-    function canProcessDisputeUnfreeze(uint256 caseId) external view returns (bool canProcess, string memory reason) { // 案件ID; 是否可以处理, 原因说明
-        DisputeSession storage session = disputeSessions[caseId]; // 质疑会话存储引用
 
-        if (session.caseId == 0) {
-            return (false, "Dispute session does not exist");
-        }
-
-        if (!session.isCompleted) {
-            return (false, "Dispute session not completed");
-        }
-
-        if (session.isActive) {
-            return (false, "Dispute session still active");
-        }
-
-        if (session.challenges.length == 0) {
-            return (false, "No challenges to process");
-        }
-
-        return (true, "Ready for dispute result processing");
-    }
 
     // ==================== 管理函数 ====================
 

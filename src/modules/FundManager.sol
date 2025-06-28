@@ -941,19 +941,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         dynamicConfig = newConfig;
     }
 
-    /**
-     * @notice 更新用户声誉分数（由RewardPunishmentManager调用）
-     */
-    function updateUserReputation(
-        address user,
-        uint256 reputation
-    ) external onlyGovernanceOrDelegated {
-        userReputation[user] = reputation;
 
-        // 重新计算用户保证金要求
-        _recalculateRequiredAmount(user);
-        _updateUserStatus(user);
-    }
 
     /**
      * @notice 批量检查用户状态

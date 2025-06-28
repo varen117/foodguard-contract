@@ -12,9 +12,7 @@ library Errors {
     error ZeroAddress();
     error InvalidAmount(uint256 provided, uint256 required);
     error InsufficientPermission(address caller, string requiredRole);
-    error OperationTimeout(uint256 deadline, uint256 currentTime);
     error DuplicateOperation(address user, string operation);
-    error SystemPaused();
 
     // ==================== 案件相关错误 ====================
 
@@ -38,7 +36,6 @@ library Errors {
     error InsufficientEnterpriseDeposit(uint256 provided, uint256 required);
     error InsufficientValidatorDeposit(uint256 provided, uint256 required);
     error InsufficientBalance(address user, uint256 required, uint256 available);
-    error DepositAlreadyFrozen(address user, uint256 amount);
     error TransferFailed(address to, uint256 amount);
     error UserInLiquidation(address user);
     error UserOperationRestricted(address user, string reason);
@@ -81,5 +78,4 @@ library Errors {
     // ==================== 系统配置错误 ====================
 
     error InvalidConfiguration(string parameter, uint256 value);
-    error ValidatorSelectionFailed(string reason);
 }
