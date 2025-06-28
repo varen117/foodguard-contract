@@ -22,13 +22,10 @@ import "../libraries/CommonModifiers.sol"; // 导入公共修饰符库
  */
 contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifiers {
     // ==================== 角色定义 ====================
-    // 使用基于角色的访问控制，确保不同功能只能由相应权限的地址调用
+    // 统一使用治理合约权限系统，与其他模块保持一致
 
     /// @notice 治理角色 - 拥有系统配置权限和重要决策权
     bytes32 public constant GOVERNANCE_ROLE = keccak256("GOVERNANCE_ROLE");
-
-    /// @notice 操作员角色 - 拥有日常操作权限，如冻结/解冻保证金
-    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
     // ==================== 状态变量 ====================
 
@@ -68,6 +65,15 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     uint256 public constant MIN_DEPOSIT = 0.01 ether; // 最小保证金：0.01 ETH
     uint256 public constant MAX_CONCURRENT_CASES = 10; // 最大并发案件数：10个
     uint256 public constant LIQUIDATION_PENALTY_RATE = 10; // 清算罚金比例：10%
+
+    // ==================== 治理合约设置 ====================
+
+    /// @notice 权限委托映射 - 允许治理合约委托特定操作给其他合约
+    /// @dev 格式: functionSelector => delegatedContract => isAuthorized
+    mapping(bytes4 => mapping(address => bool)) public functionDelegations;
+
+    /// @notice 批量权限委托事件
+    event DelegationUpdated(bytes4 indexed functionSelector, address indexed delegatedContract, bool authorized);
 
     // ==================== 修饰符 ====================
 
@@ -143,6 +149,84 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
             operationalFund: 0,
             reserveBalance: 0
         });
+    }
+
+    // ==================== 治理合约设置 ====================
+
+    /**
+     * @notice 设置治理合约地址
+     * @dev 只有管理员可以设置，设置后治理合约获得治理权限
+     * @param _governanceContract 治理合约地址
+     */
+    function setGovernanceContract(address _governanceContract) external onlyRole(DEFAULT_ADMIN_ROLE) notZeroAddress(_governanceContract) {
+        _setGovernanceContract(_governanceContract);
+        
+        // 授予治理合约治理权限
+        _grantRole(GOVERNANCE_ROLE, _governanceContract);
+        
+        emit Events.BusinessProcessAnomaly(
+            0,
+            _governanceContract,
+            "Governance Setup",
+            "Governance contract address updated",
+            "New governance contract granted GOVERNANCE_ROLE",
+            block.timestamp
+        );
+    }
+
+    /**
+     * @notice 智能权限委托 - 允许治理合约委托特定功能给其他合约
+     * @dev 这个机制确保系统可以自动运行，同时保持安全性
+     * @param functionSelector 要委托的函数选择器
+     * @param delegatedContract 被委托的合约地址
+     * @param authorized 是否授权
+     */
+    function setFunctionDelegation(
+        bytes4 functionSelector,
+        address delegatedContract,
+        bool authorized
+    ) external onlyRole(GOVERNANCE_ROLE) notZeroAddress(delegatedContract) {
+        functionDelegations[functionSelector][delegatedContract] = authorized;
+        emit DelegationUpdated(functionSelector, delegatedContract, authorized);
+    }
+
+    /**
+     * @notice 批量设置权限委托 - 高效设置多个委托权限
+     * @dev 用于一次性设置系统启动所需的所有委托权限
+     * @param functionSelectors 函数选择器数组
+     * @param delegatedContracts 被委托合约地址数组
+     * @param authorizations 授权状态数组
+     */
+    function batchSetFunctionDelegations(
+        bytes4[] calldata functionSelectors,
+        address[] calldata delegatedContracts,
+        bool[] calldata authorizations
+    ) external onlyRole(GOVERNANCE_ROLE) {
+        require(
+            functionSelectors.length == delegatedContracts.length && 
+            delegatedContracts.length == authorizations.length,
+            "Arrays length mismatch"
+        );
+
+        for (uint256 i = 0; i < functionSelectors.length; i++) {
+            require(delegatedContracts[i] != address(0), "Zero address delegation");
+            functionDelegations[functionSelectors[i]][delegatedContracts[i]] = authorizations[i];
+            emit DelegationUpdated(functionSelectors[i], delegatedContracts[i], authorizations[i]);
+        }
+    }
+
+    /**
+     * @notice 智能权限检查修饰符
+     * @dev 检查调用者是否有治理权限或被委托权限
+     */
+    modifier onlyGovernanceOrDelegated() {
+        bool hasGovernanceRole = hasRole(GOVERNANCE_ROLE, msg.sender);
+        bool hasDelegatedPermission = functionDelegations[msg.sig][msg.sender];
+        
+        if (!hasGovernanceRole && !hasDelegatedPermission) {
+            revert Errors.InsufficientPermission(msg.sender, "GOVERNANCE_OR_DELEGATED");
+        }
+        _;
     }
 
     // ==================== 动态保证金核心函数 ====================
@@ -577,7 +661,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         address user,
         DataStructures.RiskLevel riskLevel,
         uint256 baseAmount
-    ) external onlyRole(OPERATOR_ROLE) whenNotPaused notZeroAddress(user) {
+    ) external onlyGovernanceOrDelegated whenNotPaused notZeroAddress(user) {
 
         DataStructures.UserDepositProfile storage profile = userProfiles[user];
 
@@ -622,7 +706,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     function unfreezeDeposit(
         uint256 caseId,
         address user
-    ) external onlyRole(OPERATOR_ROLE) whenNotPaused notZeroAddress(user) {
+    ) external onlyGovernanceOrDelegated whenNotPaused notZeroAddress(user) {
         uint256 frozenAmount = caseFrozenDeposits[caseId][user];
         if (frozenAmount == 0) {
             revert Errors.InvalidAmount(frozenAmount, 1);
@@ -659,7 +743,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     function addRewardToDeposit(
         address user,
         uint256 amount
-    ) external onlyRole(OPERATOR_ROLE) whenNotPaused notZeroAddress(user) {
+    ) external onlyGovernanceOrDelegated whenNotPaused notZeroAddress(user) {
         if (amount == 0) {
             revert Errors.InvalidAmount(amount, 1);
         }
@@ -853,7 +937,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
      */
     function updateDynamicConfig(
         DataStructures.DynamicDepositConfig calldata newConfig
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external onlyGovernanceOrDelegated {
         dynamicConfig = newConfig;
     }
 
@@ -863,7 +947,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     function updateUserReputation(
         address user,
         uint256 reputation
-    ) external onlyRole(OPERATOR_ROLE) {
+    ) external onlyGovernanceOrDelegated {
         userReputation[user] = reputation;
 
         // 重新计算用户保证金要求
@@ -891,7 +975,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     )
     external
     payable
-    onlyRole(OPERATOR_ROLE)
+    onlyGovernanceOrDelegated
     whenNotPaused
     notZeroAddress(user)
     {
@@ -924,9 +1008,4 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     receive() external payable {
         _addToFundPool(msg.value, "Direct deposit");
     }
-
-    // 这个函数已经废弃，角色管理现在由ParticipantPoolManager处理
-    // function hasUserRole(address user, DataStructures.UserRole role) external view returns (bool) {
-    //     return userRole[user] == role;
-    // }
 }

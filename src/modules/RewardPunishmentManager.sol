@@ -254,7 +254,7 @@ contract RewardPunishmentManager is Ownable {
                 uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.enterprisePunishmentTargets);
                 totalPunishments += (userDeposit * punishmentRate) / 100;
             }
-        } else {
+            } else {
             // 投诉不成立：投诉者受惩罚
             if (record.complainantPunishmentTarget != address(0)) {
                 uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.complainantPunishmentTarget);
