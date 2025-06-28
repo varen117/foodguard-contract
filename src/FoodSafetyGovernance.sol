@@ -526,8 +526,6 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         uint256[] memory actionTypes = new uint256[](activeCaseCount); // 0: endVoting, 1: endChallenge
         uint256 count = 0;
 
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
-
         // 只遍历活跃案件列表，大幅减少遍历次数
         for (uint256 i = 0; i < activeCaseCount; i++) {
             uint256 caseId = activeCases[i];
