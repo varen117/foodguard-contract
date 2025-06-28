@@ -156,7 +156,8 @@ contract DeployFoodSafetyGovernance is Script {
         
         // 验证合约代码大小（避免部署空合约）
         uint256 governanceSize;
-        assembly { governanceSize := extcodesize(address(governance)) }
+        address governanceAddr = address(governance);
+        assembly { governanceSize := extcodesize(governanceAddr) }
         require(governanceSize > 0, "Governance contract has no code");
         
         console.log("All contracts verified successfully");

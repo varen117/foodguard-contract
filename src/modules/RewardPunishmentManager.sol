@@ -5,21 +5,8 @@ import "../libraries/DataStructures.sol"; // 导入数据结构库
 import "../libraries/Errors.sol"; // 导入错误处理库
 import "../libraries/Events.sol"; // 导入事件库
 import "../libraries/CommonModifiers.sol";
+import "../interfaces/IModuleInterfaces.sol";
 import "@openzeppelin/contracts/access/Ownable.sol"; // 导入所有权控制
-
-/**
- * @notice 资金管理合约接口
- */
-interface IFundManager {
-    function getSystemConfig() external view returns (DataStructures.SystemConfig memory);
-
-    // todo 添加函数
-    function addRewardToDeposit(address user, uint256 amount) external;
-
-    function addToFundPool(uint256 amount, string memory source) external;
-
-    function getCaseFrozenDeposit(uint256 caseId, address user) external view returns (uint256);
-}
 
 /**
  * @title RewardPunishmentManager

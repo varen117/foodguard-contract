@@ -5,34 +5,8 @@ import "../libraries/DataStructures.sol";
 import "../libraries/Errors.sol";
 import "../libraries/Events.sol";
 import "../libraries/CommonModifiers.sol";
+import "../interfaces/IModuleInterfaces.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-
-/**
- * @notice 资金管理合约接口
- * @dev 定义合约需要调用的资金管理合约函数
- */
-interface IFundManager {
-    function freezeDeposit(
-        uint256 caseId, // 案件ID
-        address user, // 用户地址
-        DataStructures.RiskLevel riskLevel, // 风险等级
-        uint256 baseAmount // 基础金额
-    ) external;
-
-    function unfreezeDeposit(uint256 caseId, address user) external; // 案件ID, 用户地址
-}
-
-/**
- * @notice 参与者池管理合约接口
- * @dev 定义合约需要调用的参与者池管理函数
- */
-interface IParticipantPoolManager {
-    function canParticipateInCase(
-        uint256 caseId, // 案件ID
-        address user, // 用户地址
-        DataStructures.UserRole requiredRole // 所需角色
-    ) external view returns (bool);
-}
 
 /**
  * @title VotingDisputeManager
@@ -520,12 +494,12 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
     // ==================== 查询函数 ====================
 
     /**
-     * @notice 获取案件的投票奖励和惩罚成员
-     * @param 案件ID
+     * @notice 获取案件的投票奖励和惩罚成员（内部函数，返回映射引用）
+     * @param caseId 案件ID
      */
-    function getVotingRewardAndPunishmentMembers(uint256 caseId) external view returns (
-        mapping(DataStructures.UserRole => address[]) memory,
-        mapping(DataStructures.UserRole => address[]) memory) {
+    function getVotingRewardAndPunishmentMembers(uint256 caseId) internal view returns (
+        mapping(DataStructures.UserRole => address[]) storage,
+        mapping(DataStructures.UserRole => address[]) storage) {
         return (rewardMember[caseId], punishMember[caseId]);
     }
     /**
@@ -604,6 +578,34 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         enterprisePunished = punishMember[caseId][DataStructures.UserRole.ENTERPRISE].length > 0;
 
         return (totalRewardedDAO, totalPunishedDAO, complainantRewarded, enterprisePunished);
+    }
+
+    /**
+     * @notice 检查投票期是否已结束
+     */
+    function isVotingPeriodEnded(uint256 caseId) external view returns (bool) {
+        DataStructures.VotingSession storage session = votingSessions[caseId];
+        if (session.caseId == 0) return false;
+        return block.timestamp > session.endTime;
+    }
+
+    /**
+     * @notice 检查质疑期是否已结束
+     */
+    function isChallengePeriodEnded(uint256 caseId) external view returns (bool) {
+        DisputeSession storage session = disputeSessions[caseId];
+        if (session.caseId == 0) return false;
+        return block.timestamp > session.endTime;
+    }
+
+    /**
+     * @notice 检查是否所有验证者都已投票
+     */
+    function areAllValidatorsVoted(uint256 caseId) external view returns (bool) {
+        DataStructures.VotingSession storage session = votingSessions[caseId];
+        if (session.caseId == 0 || !session.isActive) return false;
+        
+        return session.totalVotes >= session.selectedValidators.length;
     }
 
 

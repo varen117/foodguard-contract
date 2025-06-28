@@ -19,7 +19,7 @@ import "@openzeppelin/contracts/access/Ownable.sol"; // 所有权管理
 // 导入chainlink模块
 import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
-
+import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
 
 /**
  * @title FoodSafetyGovernance
@@ -41,7 +41,23 @@ import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/V
  * 步骤4：结束投票并开始质疑 → 步骤5：结束质疑并进入奖惩 →
  * 步骤6：处理奖惩 → 步骤7：完成案件
  */
-contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
+contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
+
+    address private _admin;
+
+    modifier onlyAdmin() {
+        require(msg.sender == _admin, "Not the admin");
+        _;
+    }
+
+    function admin() public view returns (address) {
+        return _admin;
+    }
+
+    function transferAdmin(address newAdmin) public onlyAdmin {
+        require(newAdmin != address(0), "New admin is the zero address");
+        _admin = newAdmin;
+    }
     // ==================== 状态变量VRF =================
     // vrf,也可以用构造函数初始化它们
     uint256 private s_subscriptionId;
@@ -65,8 +81,6 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
     /// @notice 案件信息映射 - 存储所有案件的核心信息
     /// @dev 键值对：caseId => CaseInfo，提供案件的完整状态追踪
     mapping(uint256 => CaseInfo) public cases; // 案件ID到案件信息的映射
-
-
 
     /// @notice Chainlink requestId => caseId
     mapping(uint256 => uint256) public caseRequestIds;
@@ -124,7 +138,8 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
 
     // ==================== 构造函数 ====================
 
-    constructor(address initialOwner) Ownable(initialOwner) VRFConsumerBaseV2Plus(vrfCoordinator) { // 初始所有者地址
+    constructor(address initialOwner) VRFConsumerBaseV2Plus(vrfCoordinator) { // 初始所有者地址
+        _admin = initialOwner;
         caseCounter = 0;
     }
 
@@ -142,7 +157,7 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
         address _votingDisputeManager, // 投票和质疑管理合约地址
         address _rewardManager, // 奖惩管理合约地址
         address _poolManager // 参与者池管理合约地址
-    ) external onlyOwner {
+    ) external onlyAdmin {
         if (
             _fundManager == address(0) ||
             _votingDisputeManager == address(0) ||
@@ -433,7 +448,7 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
             validatorCount += 1;
         }
 
-        uint256 requestId = this.sendRandomWordsRequest(validatorCount); // 发送请求获取随机数
+        uint256 requestId = this.sendRandomWordsRequest(uint32(validatorCount)); // 发送请求获取随机数
         caseRequestIds[requestId] = caseId; // 将请求ID与案件ID关联
     }
 
@@ -479,15 +494,123 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
         );
 
         // 发出验证者选择事件
-        emit Events.ValidatorsSelected(caseId, selectedValidators, block.timestamp);
+        emit Events.ValidatorsSelected(caseId, selectedValidators, block.timestamp, block.timestamp + config.votingPeriod, block.timestamp);
+    }
+
+    // ==================== 自动触发动作 ====================
+    function checkUpkeep(bytes memory /* checkData */)
+    public
+    view
+    override
+    returns (bool upkeepNeeded, bytes memory performData)
+    {
+        // 检查目前活跃的所有案件，根据案件状态、案件结束时间等条件判断是否需要执行自动触发动作
+        uint256[] memory casesToProcess = new uint256[](caseCounter);
+        uint256[] memory actionTypes = new uint256[](caseCounter); // 0: endVoting, 1: endChallenge
+        uint256 count = 0;
+
+        DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
+
+        // 遍历所有案件
+        for (uint256 i = 1; i <= caseCounter; i++) {
+            CaseInfo storage caseInfo = cases[i];
+
+            // 跳过已完成或已取消的案件
+            if (caseInfo.isCompleted || caseInfo.status == DataStructures.CaseStatus.COMPLETED ||
+                caseInfo.status == DataStructures.CaseStatus.CANCELLED) {
+                continue;
+            }
+
+            // 检查投票阶段
+            if (caseInfo.status == DataStructures.CaseStatus.VOTING) {
+                // 条件1：投票期结束时自动调用endVotingAndStartChallenge
+                if (votingDisputeManager.isVotingPeriodEnded(i)) {
+                    casesToProcess[count] = i;
+                    actionTypes[count] = 0; // endVoting
+                    count++;
+                    upkeepNeeded = true;
+                }
+                // 条件2：全员提前完成投票时自动调用endVotingAndStartChallenge
+                else if (votingDisputeManager.areAllValidatorsVoted(i)) {
+                    casesToProcess[count] = i;
+                    actionTypes[count] = 0; // endVoting
+                    count++;
+                    upkeepNeeded = true;
+                }
+            }
+            // 检查质疑阶段
+            else if (caseInfo.status == DataStructures.CaseStatus.CHALLENGING) {
+                // 条件3：质疑期结束时自动调用endChallengeAndProcessRewards
+                if (votingDisputeManager.isChallengePeriodEnded(i)) {
+                    casesToProcess[count] = i;
+                    actionTypes[count] = 1; // endChallenge
+                    count++;
+                    upkeepNeeded = true;
+                }
+            }
+        }
+
+        // 如果有需要处理的案件，编码为performData
+        if (upkeepNeeded) {
+            // 调整数组大小到实际需要的长度
+            uint256[] memory finalCases = new uint256[](count);
+            uint256[] memory finalActions = new uint256[](count);
+            for (uint256 i = 0; i < count; i++) {
+                finalCases[i] = casesToProcess[i];
+                finalActions[i] = actionTypes[i];
+            }
+            performData = abi.encode(finalCases, finalActions);
+        }
+
+        return (upkeepNeeded, performData);
+    }
+
+    /**
+     * @notice 该函数由 Chainlink Automation 调用，用于执行自动触发动作
+     * @param performData 传递给函数的数据，包含需要处理的案件ID和动作类型
+     */
+    function performUpkeep(bytes calldata performData) external override {
+        // 解码performData
+        (uint256[] memory casesToProcess, uint256[] memory actionTypes) = abi.decode(performData, (uint256[], uint256[]));
+
+        require(casesToProcess.length == actionTypes.length, "Data length mismatch");
+
+        // 循环处理所有需要的案件
+        for (uint256 i = 0; i < casesToProcess.length; i++) {
+            uint256 caseId = casesToProcess[i];
+            uint256 actionType = actionTypes[i];
+
+            try this.executeCaseAction(caseId, actionType) {
+                // 成功执行
+            } catch {
+                // 如果执行失败，继续处理下一个案件
+                // 可以在这里记录日志或发出事件
+                continue;
+            }
+        }
+    }
+
+    /**
+     * @notice 执行特定案件的动作（外部调用以便try-catch）
+     * @param caseId 案件ID
+     * @param actionType 动作类型 (0: endVoting, 1: endChallenge)
+     */
+    function executeCaseAction(uint256 caseId, uint256 actionType) external {
+        require(msg.sender == address(this), "Only self can call");
+
+        if (actionType == 0) {
+            // 结束投票并开始质疑期
+            this.endVotingAndStartChallenge(caseId);
+        } else if (actionType == 1) {
+            // 结束质疑期并进入奖惩阶段
+            this.endChallengeAndProcessRewards(caseId);
+        }
     }
 
     /**
      * @notice 步骤4: 结束投票并开始质疑期
      * @param caseId 案件ID
-      todo 两种情况下这个函数会被触发：
-     1. 投票期结束时，治理合约会调用此函数来结束投票。
-     2. 全员提前完成了投票，治理合约也会调用此函数来结束投票。
+
      */
     function endVotingAndStartChallenge(
         uint256 caseId // 案件ID
@@ -520,7 +643,6 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
     /**
      * @notice 步骤5: 结束质疑期并进入奖惩阶段
      * @param caseId 案件ID
-     * todo 质疑期结束该函数会被触发
      */
     function endChallengeAndProcessRewards(
         uint256 caseId // 案件ID
@@ -568,15 +690,24 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
     function _processRewardsPunishments(uint256 caseId) internal { // 案件ID
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
-        (mapping(DataStructures.UserRole => address[]) rewardMember,
-            mapping(DataStructures.UserRole => address[]) punishMember) =
-                            votingDisputeManager.getVotingRewardAndPunishmentMembers(caseId); // 获取投票奖励和惩罚成员列表
+        // 获取各角色的奖励和惩罚成员列表
+        address[] memory complainantRewards = votingDisputeManager.getRewardMembers(caseId, DataStructures.UserRole.COMPLAINANT);
+        address[] memory enterpriseRewards = votingDisputeManager.getRewardMembers(caseId, DataStructures.UserRole.ENTERPRISE);
+        address[] memory daoRewards = votingDisputeManager.getRewardMembers(caseId, DataStructures.UserRole.DAO_MEMBER);
+
+        address[] memory complainantPunishments = votingDisputeManager.getPunishMembers(caseId, DataStructures.UserRole.COMPLAINANT);
+        address[] memory enterprisePunishments = votingDisputeManager.getPunishMembers(caseId, DataStructures.UserRole.ENTERPRISE);
+        address[] memory daoPunishments = votingDisputeManager.getPunishMembers(caseId, DataStructures.UserRole.DAO_MEMBER);
 
         // 步骤5：调用奖惩管理器进行综合计算
         rewardManager.processCaseRewardPunishment(
             caseId,
-            rewardMember,
-            punishMember,
+            complainantRewards.length > 0 ? complainantRewards[0] : address(0),
+            enterpriseRewards.length > 0 ? enterpriseRewards[0] : address(0),
+            daoRewards,
+            complainantPunishments.length > 0 ? complainantPunishments[0] : address(0),
+            enterprisePunishments.length > 0 ? enterprisePunishments[0] : address(0),
+            daoPunishments,
             caseInfo.complaintUpheld,
             caseInfo.riskLevel);
 
@@ -604,7 +735,6 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
             caseInfo.complaintUpheld,
             0, // 总奖励金额 - 需要从奖惩管理器获取
             0, // 总惩罚金额 - 需要从奖惩管理器获取
-            "Case processing completed",
             block.timestamp
         );
 
@@ -612,7 +742,6 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
             caseId,
             DataStructures.CaseStatus.REWARD_PUNISHMENT,
             DataStructures.CaseStatus.COMPLETED,
-            address(this),
             block.timestamp
         );
     }
@@ -655,7 +784,7 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
     /**
      * @notice 暂停/恢复合约
      */
-    function setPaused(bool _paused) external onlyOwner { // 是否暂停标志
+    function setPaused(bool _paused) external onlyAdmin { // 是否暂停标志
         if (_paused) {
             _pause();
         } else {
@@ -664,15 +793,13 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
 
     }
 
-
-
     /**
      * @notice 紧急取消案件
      */
     function emergencyCancelCase(
         uint256 caseId, // 案件ID
         string calldata reason // 取消原因
-    ) external onlyOwner caseExists(caseId) {
+    ) external onlyAdmin caseExists(caseId) {
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
         if (caseInfo.isCompleted) {
