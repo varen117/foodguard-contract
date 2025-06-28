@@ -587,18 +587,58 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
 
         require(casesToProcess.length == actionTypes.length, "Data length mismatch");
 
+        uint256 successfulCases = 0;
+        uint256 failedCases = 0;
+
         // 循环处理所有需要的案件
         for (uint256 i = 0; i < casesToProcess.length; i++) {
             uint256 caseId = casesToProcess[i];
             uint256 actionType = actionTypes[i];
+            
+            // 获取动作名称用于事件记录
+            string memory actionName = _getActionName(actionType);
 
             try this.executeCaseAction(caseId, actionType) {
-                // 成功执行
-            } catch {
-                // 如果执行失败，继续处理下一个案件
-                // 可以在这里记录日志或发出事件
-                continue;
+                // 成功执行，发送成功事件
+                emit Events.AutoExecutionSuccess(
+                    caseId,
+                    actionType,
+                    actionName,
+                    block.timestamp
+                );
+                successfulCases++;
+            } catch Error(string memory reason) {
+                // 捕获带原因的错误
+                emit Events.AutoExecutionFailed(
+                    caseId,
+                    actionType,
+                    actionName,
+                    reason,
+                    block.timestamp
+                );
+                failedCases++;
+            } catch (bytes memory lowLevelData) {
+                // 捕获底层错误，转换为字符串
+                string memory errorMsg = _bytesToString(lowLevelData);
+                emit Events.AutoExecutionFailed(
+                    caseId,
+                    actionType,
+                    actionName,
+                    errorMsg,
+                    block.timestamp
+                );
+                failedCases++;
             }
+        }
+
+        // 发送批次处理结果事件
+        if (casesToProcess.length > 0) {
+            emit Events.AutoExecutionBatchProcessed(
+                casesToProcess.length,
+                successfulCases,
+                failedCases,
+                block.timestamp
+            );
         }
     }
 
@@ -812,6 +852,79 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
             delete activeCaseIndex[caseId];
             isCaseActive[caseId] = false;
         }
+    }
+
+    /**
+     * @notice 获取动作类型的描述名称
+     * @param actionType 动作类型编号
+     * @return 动作名称字符串
+     */
+    function _getActionName(uint256 actionType) internal pure returns (string memory) {
+        if (actionType == 0) {
+            return "endVotingAndStartChallenge";
+        } else if (actionType == 1) {
+            return "endChallengeAndProcessRewards";
+        } else {
+            return "unknownAction";
+        }
+    }
+
+    /**
+     * @notice 将bytes数据转换为可读的错误字符串
+     * @param data 原始bytes数据
+     * @return 转换后的错误信息字符串
+     */
+    function _bytesToString(bytes memory data) internal pure returns (string memory) {
+        if (data.length == 0) {
+            return "Unknown error";
+        }
+        
+        // 尝试解码revert原因
+        if (data.length >= 68) {
+            // 检查是否是标准的Error(string)格式
+            bytes4 selector = bytes4(data);
+            if (selector == 0x08c379a0) { // Error(string) selector
+                // 跳过selector (4 bytes) 和offset (32 bytes)
+                uint256 stringLength;
+                assembly {
+                    stringLength := mload(add(data, 36))
+                }
+                
+                if (stringLength > 0 && stringLength <= 1000) { // 防止过长的字符串
+                    bytes memory stringData = new bytes(stringLength);
+                    for (uint256 i = 0; i < stringLength; i++) {
+                        stringData[i] = data[68 + i];
+                    }
+                    return string(stringData);
+                }
+            }
+        }
+        
+        // 如果不能解码，返回十六进制表示
+        return _bytesToHex(data);
+    }
+
+    /**
+     * @notice 将bytes转换为十六进制字符串
+     * @param data 要转换的bytes数据
+     * @return 十六进制字符串
+     */
+    function _bytesToHex(bytes memory data) internal pure returns (string memory) {
+        if (data.length == 0) return "0x";
+        
+        // 限制长度以避免过长的错误信息
+        uint256 length = data.length > 32 ? 32 : data.length;
+        bytes memory alphabet = "0123456789abcdef";
+        bytes memory str = new bytes(2 + length * 2);
+        str[0] = "0";
+        str[1] = "x";
+        
+        for (uint256 i = 0; i < length; i++) {
+            str[2 + i * 2] = alphabet[uint8(data[i] >> 4)];
+            str[3 + i * 2] = alphabet[uint8(data[i] & 0x0f)];
+        }
+        
+        return string(str);
     }
 
     // ==================== 查询函数 ====================

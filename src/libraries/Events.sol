@@ -204,4 +204,50 @@ library Events {
         address cancelledBy,
         uint256 timestamp
     );
+
+    // ==================== 自动执行事件 ====================
+
+    /**
+     * @notice 自动执行成功事件
+     * @param caseId 案件ID
+     * @param actionType 执行的动作类型 (0: endVoting, 1: endChallenge)
+     * @param actionName 动作名称描述
+     * @param timestamp 执行时间戳
+     */
+    event AutoExecutionSuccess(
+        uint256 indexed caseId,
+        uint256 indexed actionType,
+        string actionName,
+        uint256 timestamp
+    );
+
+    /**
+     * @notice 自动执行失败事件
+     * @param caseId 案件ID  
+     * @param actionType 尝试执行的动作类型
+     * @param actionName 动作名称描述
+     * @param errorReason 失败原因
+     * @param timestamp 失败时间戳
+     */
+    event AutoExecutionFailed(
+        uint256 indexed caseId,
+        uint256 indexed actionType, 
+        string actionName,
+        string errorReason,
+        uint256 timestamp
+    );
+
+    /**
+     * @notice 自动执行批次处理事件
+     * @param totalCases 总处理案件数
+     * @param successfulCases 成功执行的案件数
+     * @param failedCases 执行失败的案件数
+     * @param timestamp 执行时间戳
+     */
+    event AutoExecutionBatchProcessed(
+        uint256 totalCases,
+        uint256 successfulCases,
+        uint256 failedCases,
+        uint256 timestamp
+    );
 }
