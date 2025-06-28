@@ -587,7 +587,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         DataStructures.VotingSession storage session = votingSessions[caseId];
         if (session.caseId == 0) return false;
         return block.timestamp > session.endTime;
-    }
+        }
 
     /**
      * @notice 检查质疑期是否已结束

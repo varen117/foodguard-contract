@@ -82,8 +82,21 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     /// @dev 键值对：caseId => CaseInfo，提供案件的完整状态追踪
     mapping(uint256 => CaseInfo) public cases; // 案件ID到案件信息的映射
 
+    /// @notice 活跃案件列表 - 存储所有未完成案件的ID，用于优化自动触发逻辑
+    /// @dev 只包含状态为PENDING, DEPOSIT_LOCKED, VOTING, CHALLENGING, REWARD_PUNISHMENT的案件
+    uint256[] public activeCases;
+
+    /// @notice 活跃案件索引映射 - 快速查找案件在活跃列表中的位置
+    /// @dev 键值对：caseId => index，其中index是案件在activeCases数组中的索引
+    mapping(uint256 => uint256) public activeCaseIndex;
+
+    /// @notice 案件是否活跃标记 - 快速判断案件是否还在活跃状态
+    /// @dev 键值对：caseId => isActive，避免线性搜索activeCases数组
+    mapping(uint256 => bool) public isCaseActive;
+
     /// @notice Chainlink requestId => caseId
     mapping(uint256 => uint256) public caseRequestIds;
+
     // ==================== 结构体定义 ====================
 
     /**
@@ -318,6 +331,9 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         newCase.complainantEvidenceHash = evidenceHash; // 存储投诉者证据哈希
         newCase.isCompleted = false;
 
+        // 将新案件添加到活跃案件列表，用于优化自动触发逻辑
+        _addToActiveCases(caseId);
+
         emit Events.ComplaintCreated(
             caseId,
             msg.sender,
@@ -504,35 +520,31 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     override
     returns (bool upkeepNeeded, bytes memory performData)
     {
-        // 检查目前活跃的所有案件，根据案件状态、案件结束时间等条件判断是否需要执行自动触发动作
-        uint256[] memory casesToProcess = new uint256[](caseCounter);
-        uint256[] memory actionTypes = new uint256[](caseCounter); // 0: endVoting, 1: endChallenge
+        // 优化版本：只检查活跃案件列表，避免遍历所有历史案件，显著提升性能
+        uint256 activeCaseCount = activeCases.length;
+        uint256[] memory casesToProcess = new uint256[](activeCaseCount);
+        uint256[] memory actionTypes = new uint256[](activeCaseCount); // 0: endVoting, 1: endChallenge
         uint256 count = 0;
 
         DataStructures.SystemConfig memory config = fundManager.getSystemConfig();
 
-        // 遍历所有案件
-        for (uint256 i = 1; i <= caseCounter; i++) {
-            CaseInfo storage caseInfo = cases[i];
-
-            // 跳过已完成或已取消的案件
-            if (caseInfo.isCompleted || caseInfo.status == DataStructures.CaseStatus.COMPLETED ||
-                caseInfo.status == DataStructures.CaseStatus.CANCELLED) {
-                continue;
-            }
+        // 只遍历活跃案件列表，大幅减少遍历次数
+        for (uint256 i = 0; i < activeCaseCount; i++) {
+            uint256 caseId = activeCases[i];
+            CaseInfo storage caseInfo = cases[caseId];
 
             // 检查投票阶段
             if (caseInfo.status == DataStructures.CaseStatus.VOTING) {
                 // 条件1：投票期结束时自动调用endVotingAndStartChallenge
-                if (votingDisputeManager.isVotingPeriodEnded(i)) {
-                    casesToProcess[count] = i;
+                if (votingDisputeManager.isVotingPeriodEnded(caseId)) {
+                    casesToProcess[count] = caseId;
                     actionTypes[count] = 0; // endVoting
                     count++;
                     upkeepNeeded = true;
                 }
                 // 条件2：全员提前完成投票时自动调用endVotingAndStartChallenge
-                else if (votingDisputeManager.areAllValidatorsVoted(i)) {
-                    casesToProcess[count] = i;
+                else if (votingDisputeManager.areAllValidatorsVoted(caseId)) {
+                    casesToProcess[count] = caseId;
                     actionTypes[count] = 0; // endVoting
                     count++;
                     upkeepNeeded = true;
@@ -541,8 +553,8 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
             // 检查质疑阶段
             else if (caseInfo.status == DataStructures.CaseStatus.CHALLENGING) {
                 // 条件3：质疑期结束时自动调用endChallengeAndProcessRewards
-                if (votingDisputeManager.isChallengePeriodEnded(i)) {
-                    casesToProcess[count] = i;
+                if (votingDisputeManager.isChallengePeriodEnded(caseId)) {
+                    casesToProcess[count] = caseId;
                     actionTypes[count] = 1; // endChallenge
                     count++;
                     upkeepNeeded = true;
@@ -726,6 +738,9 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         caseInfo.isCompleted = true;
         caseInfo.completionTime = block.timestamp;
 
+        // 从活跃案件列表中移除该案件，优化后续自动触发逻辑的性能
+        _removeFromActiveCases(caseId);
+
         // 解冻剩余保证金
         fundManager.unfreezeDeposit(caseId, caseInfo.complainant);
         fundManager.unfreezeDeposit(caseId, caseInfo.enterprise);
@@ -761,6 +776,44 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         return affected;
     }
 
+    /**
+     * @notice 添加案件到活跃案件列表
+     * @dev 在案件创建时调用，将新案件添加到活跃列表以便自动触发逻辑可以高效处理
+     * @param caseId 要添加的案件ID
+     */
+    function _addToActiveCases(uint256 caseId) internal {
+        if (!isCaseActive[caseId]) {
+            activeCaseIndex[caseId] = activeCases.length;
+            activeCases.push(caseId);
+            isCaseActive[caseId] = true;
+        }
+    }
+
+    /**
+     * @notice 从活跃案件列表中移除案件
+     * @dev 在案件完成或取消时调用，从活跃列表中移除案件以优化后续遍历性能
+     * 使用swap-and-pop技术保持数组紧凑，避免gas浪费
+     * @param caseId 要移除的案件ID
+     */
+    function _removeFromActiveCases(uint256 caseId) internal {
+        if (isCaseActive[caseId]) {
+            uint256 indexToRemove = activeCaseIndex[caseId];
+            uint256 lastIndex = activeCases.length - 1;
+            
+            // 如果要删除的不是最后一个元素，用最后一个元素替换它
+            if (indexToRemove != lastIndex) {
+                uint256 lastCaseId = activeCases[lastIndex];
+                activeCases[indexToRemove] = lastCaseId;
+                activeCaseIndex[lastCaseId] = indexToRemove;
+            }
+            
+            // 删除最后一个元素
+            activeCases.pop();
+            delete activeCaseIndex[caseId];
+            isCaseActive[caseId] = false;
+        }
+    }
+
     // ==================== 查询函数 ====================
 
     /**
@@ -777,6 +830,49 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
      */
     function getTotalCases() external view returns (uint256) {
         return caseCounter;
+    }
+
+    /**
+     * @notice 获取活跃案件数量
+     * @dev 返回当前正在处理中的案件数量，不包括已完成或已取消的案件
+     * @return 活跃案件数量
+     */
+    function getActiveCaseCount() external view returns (uint256) {
+        return activeCases.length;
+    }
+
+    /**
+     * @notice 获取活跃案件列表
+     * @dev 返回所有正在处理中的案件ID列表，用于外部监控和分析
+     * @return 活跃案件ID数组
+     */
+    function getActiveCases() external view returns (uint256[] memory) {
+        return activeCases;
+    }
+
+    /**
+     * @notice 检查案件是否活跃
+     * @param caseId 案件ID
+     * @return 如果案件正在处理中返回true，否则返回false
+     */
+    function isCaseActiveStatus(uint256 caseId) external view returns (bool) {
+        return isCaseActive[caseId];
+    }
+
+    /**
+     * @notice 获取活跃案件的详细信息
+     * @dev 批量获取所有活跃案件的详细信息，用于管理面板展示
+     * @return activeCaseInfos 活跃案件信息数组
+     */
+    function getActiveCaseInfos() external view returns (CaseInfo[] memory activeCaseInfos) {
+        uint256 count = activeCases.length;
+        activeCaseInfos = new CaseInfo[](count);
+        
+        for (uint256 i = 0; i < count; i++) {
+            activeCaseInfos[i] = cases[activeCases[i]];
+        }
+        
+        return activeCaseInfos;
     }
 
     // ==================== 管理函数 ====================
@@ -810,10 +906,38 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         caseInfo.isCompleted = true;
         caseInfo.completionTime = block.timestamp;
 
+        // 从活跃案件列表中移除该案件，优化后续自动触发逻辑的性能
+        _removeFromActiveCases(caseId);
+
         // 解冻保证金
         fundManager.unfreezeDeposit(caseId, caseInfo.complainant);
         fundManager.unfreezeDeposit(caseId, caseInfo.enterprise);
 
         emit Events.CaseCancelled(caseId, reason, msg.sender, block.timestamp);
+    }
+
+    /**
+     * @notice 清理活跃案件列表
+     * @dev 管理员函数，用于处理数据不一致情况，移除已完成但仍在活跃列表中的案件
+     * 这是一个维护函数，正常情况下不应该需要调用
+     */
+    function cleanupActiveCases() external onlyAdmin {
+        uint256 i = 0;
+        while (i < activeCases.length) {
+            uint256 caseId = activeCases[i];
+            CaseInfo storage caseInfo = cases[caseId];
+            
+            // 检查案件是否已完成或已取消
+            if (caseInfo.isCompleted || 
+                caseInfo.status == DataStructures.CaseStatus.COMPLETED ||
+                caseInfo.status == DataStructures.CaseStatus.CANCELLED) {
+                
+                // 移除已完成的案件（这会改变数组，所以不增加i）
+                _removeFromActiveCases(caseId);
+            } else {
+                // 只有案件仍然活跃时才增加索引
+                i++;
+            }
+        }
     }
 }
