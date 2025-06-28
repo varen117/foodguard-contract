@@ -486,6 +486,9 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
     /**
      * @notice 步骤4: 结束投票并开始质疑期
      * @param caseId 案件ID
+      todo 两种情况下这个函数会被触发：
+     1. 投票期结束时，治理合约会调用此函数来结束投票。
+     2. 全员提前完成了投票，治理合约也会调用此函数来结束投票。
      */
     function endVotingAndStartChallenge(
         uint256 caseId // 案件ID
@@ -499,7 +502,6 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
         votingDisputeManager.endVotingSession(caseId);
 
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
-//        caseInfo.complaintUpheld = complaintUpheld; // todo 质疑完成之后再记录投票结果
 
         // 开启质疑阶段
         caseInfo.status = DataStructures.CaseStatus.CHALLENGING;
@@ -519,6 +521,7 @@ contract FoodSafetyGovernance is Pausable, Ownable, VRFConsumerBaseV2Plus {
     /**
      * @notice 步骤5: 结束质疑期并进入奖惩阶段
      * @param caseId 案件ID
+     * todo 质疑期结束该函数会被触发
      */
     function endChallengeAndProcessRewards(
         uint256 caseId // 案件ID
