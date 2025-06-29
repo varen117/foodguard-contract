@@ -78,19 +78,6 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
 
     // ==================== 修饰符 ====================
 
-    modifier onlyRegisteredUser() {
-        if (!isRegistered[msg.sender]) {
-            revert Errors.UserNotRegistered(msg.sender);
-        }
-        _;
-    }
-
-    modifier requireRole(address user, DataStructures.UserRole role) {
-        if (userRoles[user] != role) {
-            revert Errors.InvalidUserRole(user, uint8(userRoles[user]), uint8(role));
-        }
-        _;
-    }
 
     // ==================== 构造函数 ====================
 

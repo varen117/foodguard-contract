@@ -194,6 +194,21 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     // ==================== 核心流程函数 ====================
 
     /**
+     * @notice 注册用户
+     * @param user 用户地址
+     * @param userRole 用户角色
+     */
+    function registerUser(address user, uint8 userRole) external {
+        // 检查是否超出枚举范围
+        if (userRole > uint8(DataStructures.UserRole.DAO_MEMBER)) {
+            revert Errors.UserRoleIncorrect(user, userRole, "Incorrect user role registration");
+        }
+
+        // 调用池管理合约注册用户
+        poolManager.registerUser(user, DataStructures.UserRole(userRole));
+    }
+
+    /**
      * @notice 步骤1: 创建投诉 - 启动食品安全治理流程的入口函数
      * @dev 完整的投诉创建流程，包含严格的参数验证和自动化后续步骤
      * 功能流程：

@@ -24,7 +24,9 @@ library Errors {
     // ==================== 用户和权限错误 ====================
 
     error UserNotRegistered(address user);
+    error UserHasRegistered(address user);
     error InvalidUserRole(address user, uint8 currentRole, uint8 requiredRole);
+    error UserRoleIncorrect(address user, uint8 currentRole, string message );
     error EnterpriseNotRegistered(address enterprise);
     error InsufficientReputation(address user, uint256 current, uint256 required);
     error InvalidTimestamp(uint256 provided, uint256 current);
