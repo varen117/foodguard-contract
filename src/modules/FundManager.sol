@@ -121,8 +121,10 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
             minComplaintDeposit: 0.01 ether,
             minEnterpriseDeposit: 0.1 ether,
             minDaoDeposit: 0.05 ether,
-            votingPeriod: 3 days,
-            challengePeriod: 2 days,
+//            votingPeriod: 259200,//三天 todo 方便测试，暂时注释
+            votingPeriod: 200,//单位秒（一分钟）
+//            challengePeriod: 172800,todo 方便测试，暂时注释
+            challengePeriod: 200,
             minValidators: 3,
             maxValidators: 15,
             rewardPoolPercentage: 30,
@@ -171,61 +173,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
             "New governance contract granted GOVERNANCE_ROLE",
             block.timestamp
         );
-    }
-
-    /**
-     * @notice 智能权限委托 - 允许治理合约委托特定功能给其他合约
-     * @dev 这个机制确保系统可以自动运行，同时保持安全性
-     * @param functionSelector 要委托的函数选择器
-     * @param delegatedContract 被委托的合约地址
-     * @param authorized 是否授权
-     */
-    function setFunctionDelegation(
-        bytes4 functionSelector,
-        address delegatedContract,
-        bool authorized
-    ) external onlyRole(GOVERNANCE_ROLE) notZeroAddress(delegatedContract) {
-        functionDelegations[functionSelector][delegatedContract] = authorized;
-        emit DelegationUpdated(functionSelector, delegatedContract, authorized);
-    }
-
-    /**
-     * @notice 批量设置权限委托 - 高效设置多个委托权限
-     * @dev 用于一次性设置系统启动所需的所有委托权限
-     * @param functionSelectors 函数选择器数组
-     * @param delegatedContracts 被委托合约地址数组
-     * @param authorizations 授权状态数组
-     */
-    function batchSetFunctionDelegations(
-        bytes4[] calldata functionSelectors,
-        address[] calldata delegatedContracts,
-        bool[] calldata authorizations
-    ) external onlyRole(GOVERNANCE_ROLE) {
-        require(
-            functionSelectors.length == delegatedContracts.length &&
-            delegatedContracts.length == authorizations.length,
-            "Arrays length mismatch"
-        );
-
-        for (uint256 i = 0; i < functionSelectors.length; i++) {
-            require(delegatedContracts[i] != address(0), "Zero address delegation");
-            functionDelegations[functionSelectors[i]][delegatedContracts[i]] = authorizations[i];
-            emit DelegationUpdated(functionSelectors[i], delegatedContracts[i], authorizations[i]);
-        }
-    }
-
-    /**
-     * @notice 智能权限检查修饰符
-     * @dev 检查调用者是否有治理权限或被委托权限
-     */
-    modifier onlyGovernanceOrDelegated() {
-        bool hasGovernanceRole = hasRole(GOVERNANCE_ROLE, msg.sender);
-        bool hasDelegatedPermission = functionDelegations[msg.sig][msg.sender];
-
-        if (!hasGovernanceRole && !hasDelegatedPermission) {
-            revert Errors.InsufficientPermission(msg.sender, "GOVERNANCE_OR_DELEGATED");
-        }
-        _;
     }
 
     // ==================== 动态保证金核心函数 ====================
@@ -462,7 +409,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         address user,
         DataStructures.RiskLevel riskLevel,
         uint256 baseAmount
-    ) external onlyGovernanceOrDelegated whenNotPaused notZeroAddress(user) {
+    ) external whenNotPaused notZeroAddress(user) {
 
         DataStructures.UserDepositProfile storage profile = userProfiles[user];
 
@@ -507,7 +454,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     function unfreezeDeposit(
         uint256 caseId,
         address user
-    ) external onlyGovernanceOrDelegated whenNotPaused notZeroAddress(user) {
+    ) external whenNotPaused notZeroAddress(user) {
         uint256 frozenAmount = caseFrozenDeposits[caseId][user];
         if (frozenAmount == 0) {
             revert Errors.InvalidAmount(frozenAmount, 1);
@@ -544,7 +491,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     function addRewardToDeposit(
         address user,
         uint256 amount
-    ) external onlyGovernanceOrDelegated whenNotPaused notZeroAddress(user) {
+    ) external whenNotPaused notZeroAddress(user) {
         if (amount == 0) {
             revert Errors.InvalidAmount(amount, 1);
         }
@@ -575,7 +522,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     function decreaseRewardToDeposit(
         address user,
         uint256 amount
-    ) external onlyGovernanceOrDelegated whenNotPaused notZeroAddress(user) {
+    ) external whenNotPaused notZeroAddress(user) {
         if (amount == 0) {
             revert Errors.InvalidAmount(amount, 1);
         }
@@ -771,7 +718,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
      */
     function updateDynamicConfig(
         DataStructures.DynamicDepositConfig calldata newConfig
-    ) external onlyGovernanceOrDelegated {
+    ) external {
         dynamicConfig = newConfig;
     }
 
@@ -795,7 +742,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     )
     external
     payable
-    onlyGovernanceOrDelegated
     whenNotPaused
     notZeroAddress(user)
     {

@@ -10,14 +10,14 @@ import "./Errors.sol";
  * @dev 通过继承此合约，其他合约可以使用统一的修饰符，减少代码重复
  */
 abstract contract CommonModifiers {
-    
+
     // ==================== 状态变量 ====================
-    
+
     /// @notice 治理合约地址
     address public governanceContract;
-    
+
     // ==================== 修饰符 ====================
-    
+
     /**
      * @notice 只有治理合约可以调用
      * @dev 统一的治理权限检查修饰符
@@ -28,7 +28,7 @@ abstract contract CommonModifiers {
         }
         _;
     }
-    
+
     /**
      * @notice 检查地址是否为零地址
      * @dev 统一的零地址检查修饰符
@@ -39,7 +39,7 @@ abstract contract CommonModifiers {
         }
         _;
     }
-    
+
     /**
      * @notice 检查字符串是否为空
      * @dev 统一的字符串非空检查修饰符
@@ -50,7 +50,7 @@ abstract contract CommonModifiers {
         }
         _;
     }
-    
+
     /**
      * @notice 检查时间戳是否有效
      * @dev 统一的时间戳验证修饰符
@@ -61,9 +61,9 @@ abstract contract CommonModifiers {
         }
         _;
     }
-    
+
     // ==================== 内部验证函数 ====================
-    
+
     /**
      * @notice 验证地址不为零
      * @dev 内部函数，用于在复杂验证逻辑中调用
@@ -73,7 +73,7 @@ abstract contract CommonModifiers {
             revert Errors.ZeroAddress();
         }
     }
-    
+
     /**
      * @notice 验证字符串不为空
      * @dev 内部函数，用于在复杂验证逻辑中调用
@@ -83,7 +83,7 @@ abstract contract CommonModifiers {
             revert Errors.EmptyEvidenceDescription();
         }
     }
-    
+
     /**
      * @notice 验证多个字符串都不为空
      * @dev 内部函数，批量验证多个字符串
@@ -92,7 +92,7 @@ abstract contract CommonModifiers {
         _requireNotEmptyString(str1);
         _requireNotEmptyString(str2);
     }
-    
+
     /**
      * @notice 验证时间戳有效性
      * @dev 内部函数，验证时间戳不超过当前时间
@@ -102,15 +102,14 @@ abstract contract CommonModifiers {
             revert Errors.InvalidTimestamp(timestamp, block.timestamp);
         }
     }
-    
+
     // ==================== 管理函数 ====================
-    
+
     /**
      * @notice 设置治理合约地址
      * @dev 受保护的函数，只能由合约所有者调用
      */
-    function _setGovernanceContract(address _governanceContract) internal {
-        _requireNotZeroAddress(_governanceContract);
+    function _setGovernanceContract(address _governanceContract) internal notZeroAddress(_governanceContract) {
         governanceContract = _governanceContract;
     }
-} 
+}
