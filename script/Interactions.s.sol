@@ -3,7 +3,7 @@ pragma solidity ^0.8.20;
 
 import {Script, console} from "forge-std/Script.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
-import {Raffle} from "../src/Raffle.sol";
+import {FoodSafetyGovernance} from "../src/FoodSafetyGovernance.sol";
 import {DevOpsTools} from "foundry-devops/src/DevOpsTools.sol"; //dev 第一步导入
 import {VRFCoordinatorV2_5Mock} from "@chainlink/contracts/src/v0.8/vrf/mocks/VRFCoordinatorV2_5Mock.sol";
 import {LinkToken} from "../test/mocks/LinkToken.sol";
@@ -148,7 +148,7 @@ contract AddConsumer is Script {
      */
     function run() external {
         // 获取当前链的最近刚部署的合约地址（参考文档：github.com/Cyfrin/foundry-devops）
-        address mostRecentlyDeployed = DevOpsTools.get_most_recent_deployment("Raffle", block.chainid);
+        address mostRecentlyDeployed = DevOpsTools.get_most_recent_deployment("FoodSafetyGovernance", block.chainid);
         addConsumerUsingConfig(mostRecentlyDeployed);
     }
 }

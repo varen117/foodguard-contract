@@ -19,6 +19,7 @@ import "@openzeppelin/contracts/access/Ownable.sol"; // 所有权管理
 // 导入chainlink模块
 import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
+import {IVRFCoordinatorV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/interfaces/IVRFCoordinatorV2Plus.sol";
 import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/automation/interfaces/AutomationCompatibleInterface.sol";
 
 /**
@@ -216,7 +217,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         require(_requestConfirmations >= 1, "Invalid confirmation count");
 
         s_subscriptionId = _subscriptionId;
-        vrfCoordinator = _vrfCoordinator;
+        s_vrfCoordinator = IVRFCoordinatorV2Plus(_vrfCoordinator);
         s_keyHash = _keyHash;
         callbackGasLimit = _callbackGasLimit;
         requestConfirmations = _requestConfirmations;

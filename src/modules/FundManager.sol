@@ -204,7 +204,11 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         string memory descrption;
         string memory action;
         // 如果用户没有活跃案件，直接设为健康状态
-        profile.status = requiredAmount == 0 ? DataStructures.DepositStatus.HEALTHY : profile.status;
+        if (requiredAmount == 0) {
+            profile.status = DataStructures.DepositStatus.HEALTHY;
+            profile.operationRestricted = false;
+            return;
+        }
 
         // 计算保证金覆盖率（百分比）
         // 覆盖率 = 用户拥有的保证金 / 系统要求的保证金 * 100%

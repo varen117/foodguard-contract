@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.20;
 
-import {ERC20} from "@solmate/tokens/ERC20.sol";
+import {ERC20} from "lib/solmate/src/tokens/ERC20.sol";
 
 interface ERC677Receiver {
     function onTokenTransfer(address _sender, uint256 _value, bytes memory _data) external;
