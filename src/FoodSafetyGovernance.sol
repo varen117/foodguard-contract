@@ -189,8 +189,6 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         votingDisputeManager = VotingDisputeManager(_votingDisputeManager);
         rewardManager = RewardPunishmentManager(_rewardManager);
         poolManager = ParticipantPoolManager(_poolManager);
-
-        // 注意：各模块的治理合约地址应该在调用此函数之前由管理员设置
     }
 
     // ==================== 核心流程函数 ====================
@@ -232,7 +230,6 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         uint8 riskLevel // 风险等级数值(0-2)
     )
     external
-    payable
     whenNotPaused
     returns (uint256 caseId) // 返回新案件ID
     {
@@ -286,14 +283,6 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
 
         if (riskLevel > uint8(DataStructures.RiskLevel.HIGH)) {
             revert Errors.InvalidRiskLevel(riskLevel);
-        }
-
-        // 用户发送了额外的ETH，存入保证金
-        if (msg.value > 0) {
-            fundManager.registerUserDeposit{value: msg.value}(
-                msg.sender,
-                msg.value
-            );
         }
 
         DataStructures.RiskLevel riskLevelEnum = DataStructures.RiskLevel(riskLevel); // 风险等级枚举值
@@ -839,14 +828,14 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         if (isCaseActive[caseId]) {
             uint256 indexToRemove = activeCaseIndex[caseId];
             uint256 lastIndex = activeCases.length - 1;
-            
+
             // 如果要删除的不是最后一个元素，用最后一个元素替换它
             if (indexToRemove != lastIndex) {
                 uint256 lastCaseId = activeCases[lastIndex];
                 activeCases[indexToRemove] = lastCaseId;
                 activeCaseIndex[lastCaseId] = indexToRemove;
             }
-            
+
             // 删除最后一个元素
             activeCases.pop();
             delete activeCaseIndex[caseId];
@@ -907,11 +896,11 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     function getActiveCaseInfos() external view returns (CaseInfo[] memory activeCaseInfos) {
         uint256 count = activeCases.length;
         activeCaseInfos = new CaseInfo[](count);
-        
+
         for (uint256 i = 0; i < count; i++) {
             activeCaseInfos[i] = cases[activeCases[i]];
         }
-        
+
         return activeCaseInfos;
     }
 
@@ -966,12 +955,12 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         while (i < activeCases.length) {
             uint256 caseId = activeCases[i];
             CaseInfo storage caseInfo = cases[caseId];
-            
+
             // 检查案件是否已完成或已取消
-            if (caseInfo.isCompleted || 
+            if (caseInfo.isCompleted ||
                 caseInfo.status == DataStructures.CaseStatus.COMPLETED ||
                 caseInfo.status == DataStructures.CaseStatus.CANCELLED) {
-                
+
                 // 移除已完成的案件（这会改变数组，所以不增加i）
                 _removeFromActiveCases(caseId);
             } else {

@@ -160,10 +160,10 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
      */
     function setGovernanceContract(address _governanceContract) external onlyRole(DEFAULT_ADMIN_ROLE) notZeroAddress(_governanceContract) {
         _setGovernanceContract(_governanceContract);
-        
+
         // 授予治理合约治理权限
         _grantRole(GOVERNANCE_ROLE, _governanceContract);
-        
+
         emit Events.BusinessProcessAnomaly(
             0,
             _governanceContract,
@@ -203,7 +203,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         bool[] calldata authorizations
     ) external onlyRole(GOVERNANCE_ROLE) {
         require(
-            functionSelectors.length == delegatedContracts.length && 
+            functionSelectors.length == delegatedContracts.length &&
             delegatedContracts.length == authorizations.length,
             "Arrays length mismatch"
         );
@@ -222,7 +222,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     modifier onlyGovernanceOrDelegated() {
         bool hasGovernanceRole = hasRole(GOVERNANCE_ROLE, msg.sender);
         bool hasDelegatedPermission = functionDelegations[msg.sig][msg.sender];
-        
+
         if (!hasGovernanceRole && !hasDelegatedPermission) {
             revert Errors.InsufficientPermission(msg.sender, "GOVERNANCE_OR_DELEGATED");
         }
@@ -261,7 +261,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         // 设计原理：防止用户同时参与过多案件，分散注意力和责任
         // 每个活跃案件增加50%的额外保证金要求
         if (profile.activeCaseCount > 1) {
-            // 简化：每个额外案件增加50%
+            // 每个额外案件增加50%
             uint256 extraRate = (profile.activeCaseCount - 1) * 50;
             if (extraRate > 200) extraRate = 200; // 最多增加200%
             required = (required * (100 + extraRate)) / 100;
@@ -319,7 +319,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
             profile.operationRestricted = false;
             profile.lastWarningTime = block.timestamp; // 记录警告时间
 
-            // 简化：只记录业务异常，不发出专门的警告事件
+            // 只记录业务异常，不发出专门的警告事件
             emit Events.BusinessProcessAnomaly(
                 0,
                 user,
@@ -333,7 +333,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
             profile.status = DataStructures.DepositStatus.RESTRICTED;
             profile.operationRestricted = true; // 开始限制用户操作
 
-            // 简化：只记录业务异常
+            // 只记录业务异常
             emit Events.BusinessProcessAnomaly(
                 0,
                 user,
@@ -382,23 +382,11 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         // 记录清算前的状态用于异常检测
         uint256 preExitFrozenAmount = profile.frozenAmount;
         uint256 preExitTotalDeposit = profile.totalDeposit;
-        // uint256 preExitActiveCases = profile.activeCaseCount;
 
         // 步骤1：先强制退出所有活跃案件并解冻保证金
         // 这样可以确保所有冻结资金都正确释放，避免状态不一致
         _forceExitAllCases(user);
 
-        // 异常检测1：验证强制退出后的状态
-        if (profile.frozenAmount != 0) {
-            emit Events.BusinessProcessAnomaly(
-                0, // 不特定于某个案件
-                user,
-                "User Liquidation",
-                "Non-zero frozen amount after force exit",
-                "Continue liquidation with warning",
-                block.timestamp
-            );
-        }
 
         if (profile.activeCaseCount != 0) {
             emit Events.BusinessProcessAnomaly(
@@ -544,8 +532,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
 
         // 最终状态一致性检查：检测并处理系统异常
         if (profile.frozenAmount > 0) {
-            //检测到系统状态不一致！
-            // 这是一个严重的系统异常，表明资金账目存在偏差
 
             // 记录异常并修复
             emit Events.BusinessProcessAnomaly(
