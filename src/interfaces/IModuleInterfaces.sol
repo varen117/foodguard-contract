@@ -16,14 +16,16 @@ interface IFundManager {
     ) external;
 
     function unfreezeDeposit(uint256 caseId, address user) external; // 案件ID, 用户地址
-    
+
     function getCaseFrozenDeposit(uint256 caseId, address user) external view returns (uint256);
-    
+
     function addRewardToDeposit(address user, uint256 amount) external;
-    
+
+    function decreaseRewardToDeposit(address user, uint256 amount) external;
+
     function getSystemConfig() external view returns (DataStructures.SystemConfig memory);
-    
-    function addToFundPool(uint256 amount, string memory source) external;
+
+    function _addToFundPool(uint256 amount, string memory source) internal;
 }
 
 /**
@@ -36,7 +38,7 @@ interface IParticipantPoolManager {
         address user, // 用户地址
         DataStructures.UserRole requiredRole // 所需角色
     ) external view returns (bool);
-    
+
     function isValidatorsCheckedVoting(uint256 caseId) external view returns (bool);
 }
 
@@ -48,4 +50,4 @@ interface IVotingDisputeManager {
     function isVotingPeriodEnded(uint256 caseId) external view returns (bool);
     function isChallengePeriodEnded(uint256 caseId) external view returns (bool);
     function areAllValidatorsVoted(uint256 caseId) external view returns (bool);
-} 
+}

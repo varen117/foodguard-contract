@@ -558,13 +558,46 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         _updateUserStatus(user);
 
         // 发出奖励添加事件
-        emit Events.DepositMade(
+        emit Events.RewardDistribution(
             user,
             amount,
             profile.totalDeposit,
             block.timestamp
         );
     }
+
+
+    /**
+        * @notice 从用户保证金余额扣除罚金
+     * @param user 用户地址
+     * @param amount 罚金金额
+     */
+    function decreaseRewardToDeposit(
+        address user,
+        uint256 amount
+    ) external onlyGovernanceOrDelegated whenNotPaused notZeroAddress(user) {
+        if (amount == 0) {
+            revert Errors.InvalidAmount(amount, 1);
+        }
+
+        DataStructures.UserDepositProfile storage profile = userProfiles[user];
+
+        // 将罚金从用户保证金中扣除
+        profile.totalDeposit -= amount;
+
+        // 更新用户状态
+        _updateUserStatus(user);
+
+
+        // 发出罚金扣除事件
+        emit Events.FineDeduction(
+            user,
+            amount,
+            profile.totalDeposit,
+            block.timestamp
+        );
+    }
+
 
     // ==================== 辅助函数 ====================
 

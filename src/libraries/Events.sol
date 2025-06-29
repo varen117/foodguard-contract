@@ -183,6 +183,19 @@ library Events {
         uint256 timestamp
     );
 
+    event FineDeduction(
+        address indexed user,
+        uint256 amount,
+        uint256 totalDeposit,
+        uint256 timestamp
+    );
+event RewardDistribution(
+        address indexed user,
+        uint256 amount,
+        uint256 totalDeposit,
+        uint256 timestamp
+    );
+
     event FundsTransferredFromPool(
         address indexed recipient,
         uint256 amount,

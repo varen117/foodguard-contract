@@ -527,27 +527,35 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
 
             // 检查投票阶段
             if (caseInfo.status == DataStructures.CaseStatus.VOTING) {
-                // 条件1：投票期结束时自动调用endVotingAndStartChallenge
+                // 投票期结束时自动更新为投票结束状态
                 if (votingDisputeManager.isVotingPeriodEnded(caseId)) {
                     casesToProcess[count] = caseId;
-                    actionTypes[count] = 0; // endVoting
+                    actionTypes[count] = uint256(DataStructures.ActionType.updateToVotingStatus); // updateToVotingStatus
                     count++;
                     upkeepNeeded = true;
                 }
-                // 条件2：全员提前完成投票时自动调用endVotingAndStartChallenge
+                // 条件2：全员提前完成投票时自动更新为投票结束状态
                 else if (votingDisputeManager.areAllValidatorsVoted(caseId)) {
                     casesToProcess[count] = caseId;
-                    actionTypes[count] = 0; // endVoting
+                    actionTypes[count] = uint256(DataStructures.ActionType.updateToVotingStatus); // updateToVotingStatus
                     count++;
                     upkeepNeeded = true;
                 }
+            }
+            // 检查投票结束阶段
+            else if (caseInfo.status == DataStructures.CaseStatus.VOTING_ENDED) {
+                // 投票结束后自动进入质疑阶段
+                casesToProcess[count] = caseId;
+                actionTypes[count] = uint256(DataStructures.ActionType.endVoting); // endVoting
+                count++;
+                upkeepNeeded = true;
             }
             // 检查质疑阶段
             else if (caseInfo.status == DataStructures.CaseStatus.CHALLENGING) {
                 // 条件3：质疑期结束时自动调用endChallengeAndProcessRewards
                 if (votingDisputeManager.isChallengePeriodEnded(caseId)) {
                     casesToProcess[count] = caseId;
-                    actionTypes[count] = 1; // endChallenge
+                    actionTypes[count] = uint256(DataStructures.ActionType.endChallenge); // endChallenge
                     count++;
                     upkeepNeeded = true;
                 }
@@ -614,7 +622,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
             emit Events.AutoExecutionSuccess(
                 caseId,
                 actionType,
-                actionType == 0 ? "endVoting" : "endChallenge",
+                actionType == 0 ? "endVoting" : actionType == 1 ? "endChallenge" : "updateToVotingEnded",
                 block.timestamp
             );
             return true;
@@ -623,7 +631,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
             emit Events.AutoExecutionFailed(
                 caseId,
                 actionType,
-                actionType == 0 ? "endVoting" : "endChallenge",
+                actionType == 0 ? "endVoting" : actionType == 1 ? "endChallenge" : "updateToVotingEnded",
                 "Execution failed",
                 block.timestamp
             );
@@ -634,18 +642,46 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     /**
      * @notice 执行特定案件的动作（外部调用以便try-catch）
      * @param caseId 案件ID
-     * @param actionType 动作类型 (0: endVoting, 1: endChallenge)
+     * @param actionType 动作类型 (0: endVoting, 1: endChallenge, 2: updateToVotingEnded)
      */
     function executeCaseAction(uint256 caseId, uint256 actionType) external {
         require(msg.sender == address(this), "Only self can call");
-
-        if (actionType == 0) {
+        DataStructures.ActionType actionTypeEnum = DataStructures.ActionType(actionType); // 将动作类型转换为枚举
+        if (DataStructures.ActionType.endVoting ==  actionTypeEnum) {
             // 结束投票并开始质疑期
             this.endVotingAndStartChallenge(caseId);
-        } else if (actionType == 1) {
+        } else if (actionTypeEnum == DataStructures.ActionType.endChallenge) {
             // 结束质疑期并进入奖惩阶段
             this.endChallengeAndProcessRewards(caseId);
+        } else if (actionTypeEnum == DataStructures.ActionType.updateToVotingStatus) {
+            // 更新案件状态为投票结束
+            this.updateCaseToVotingEnded(caseId);
         }
+    }
+
+    /**
+     * @notice 更新案件状态为投票结束
+     * @param caseId 案件ID
+     */
+    function updateCaseToVotingEnded(
+        uint256 caseId // 案件ID
+    )
+    external
+    whenNotPaused
+    caseExists(caseId)
+    inStatus(caseId, DataStructures.CaseStatus.VOTING)
+    {
+        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
+
+        // 更新案件状态为投票结束
+        caseInfo.status = DataStructures.CaseStatus.VOTING_ENDED;
+
+        emit Events.CaseStatusUpdated(
+            caseId,
+            DataStructures.CaseStatus.VOTING,
+            DataStructures.CaseStatus.VOTING_ENDED,
+            block.timestamp
+        );
     }
 
     /**
@@ -659,7 +695,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     external
     whenNotPaused
     caseExists(caseId)
-    inStatus(caseId, DataStructures.CaseStatus.VOTING)
+    inStatus(caseId, DataStructures.CaseStatus.VOTING_ENDED)
     {
         // 结束验证阶段并获取投票结果
         votingDisputeManager.endVotingSession(caseId);
@@ -675,7 +711,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
 
         emit Events.CaseStatusUpdated(
             caseId,
-            DataStructures.CaseStatus.VOTING,
+            DataStructures.CaseStatus.VOTING_ENDED,
             DataStructures.CaseStatus.CHALLENGING,
             block.timestamp
         );

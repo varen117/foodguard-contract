@@ -18,6 +18,7 @@ library DataStructures {
         PENDING,            // 待处理：案件刚创建，等待系统分配验证者
         DEPOSIT_LOCKED,     // 保证金已锁定：各方保证金已冻结，等待进入投票阶段
         VOTING,             // 投票中：验证者正在对案件进行表决
+        VOTING_ENDED,       // 投票结束：所有验证者完成投票或投票期结束，等待进入质疑阶段
         CHALLENGING,        // 质疑中：投票结束后的质疑期，允许对结果提出异议
         REWARD_PUNISHMENT,  // 奖惩阶段：正在处理各方的奖励和惩罚分配
         COMPLETED,          // 已完成：案件处理完毕，所有流程结束
@@ -41,6 +42,16 @@ library DataStructures {
     enum VoteChoice {
         SUPPORT_COMPLAINT,  // 支持投诉：认为投诉有理，企业确实存在问题
         REJECT_COMPLAINT    // 反对投诉：认为投诉无理，企业没有实质性问题
+    }
+
+    /**
+     * @notice 自动化操作类型枚举
+     * @dev 定义Chainlink Automation触发的自动化操作类型，用于系统自动维护
+     */
+    enum ActionType {
+        endVoting,              // 结束投票：投票期结束，自动结束投票并进入质疑阶段
+        endChallenge,           // 结束质疑：质疑期结束，自动结束质疑并进入奖惩阶段
+        updateToVotingStatus    // 更新投票状态：将案件状态从DEPOSIT_LOCKED更新为VOTING
     }
 
     /**

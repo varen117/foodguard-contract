@@ -71,8 +71,8 @@ contract RewardPunishmentManager is Ownable {
         // 参与者列表 - 便于遍历和统计
         address complainantRewardRecipient; // 获得补偿的投诉用户
         address complainantPunishmentTarget; // 获得惩罚的投诉用户
-        address enterpriseRewardRecipients; // 获得奖励的企业用户列表
-        address enterprisePunishmentTargets; // 获得惩罚的企业用户列表
+        address enterpriseRewardRecipients; // 获得奖励的企业用户
+        address enterprisePunishmentTargets; // 获得惩罚的企业用户
         address[] daoRewardRecipients; // 获得奖励的dao用户列表
         address[] daoRewardPunishmentTargets;//获得惩罚的dao用户列表
     }
@@ -192,7 +192,7 @@ contract RewardPunishmentManager is Ownable {
         // 分配奖励和惩罚
         _allocateRewardsAndPunishments(record, fundManagerContract);
 
-        // 发放奖励到用户保证金
+        // 发放奖励到获胜者保证金、扣除罚金从失败者保证金
         _distributeRewardsToDeposits(record, fundManagerContract);
 
         emit Events.RewardPunishmentCalculationStarted(
@@ -490,14 +490,14 @@ contract RewardPunishmentManager is Ownable {
         _distributeRoleRewards(record.daoRewardRecipients, record, fundManagerContract);
 
         // 执行惩罚
-        _executePunishments(record);
+        _executePunishments(record, fundManagerContract);
 
         // 如果投诉成立，将惩罚的20%存入基金库
         if (record.complaintUpheld) {
             uint256 toFundPool = (record.totalPunishmentAmount * 20) / 100;
 
             // 这里应该调用fundManager将资金转入基金库
-            // fundManagerContract.addToFundPool(toFundPool, "Punishment penalty");
+             fundManagerContract._addToFundPool(toFundPool, "Punishment penalty");
         }
     }
 
@@ -505,20 +505,21 @@ contract RewardPunishmentManager is Ownable {
      * @notice 执行惩罚
      */
     function _executePunishments(
-        RewardPunishmentRecord storage record
+        RewardPunishmentRecord storage record,
+        IFundManager fundManagerContract
     ) internal {
         // 执行投诉者惩罚（如果有）
         if (record.complainantPunishmentTarget != address(0)) {
-            _executeSinglePunishment(record.complainantPunishmentTarget, record);
+            _executeSinglePunishment(record.complainantPunishmentTarget, record, fundManagerContract);
         }
 
         // 执行企业惩罚（如果有）
         if (record.enterprisePunishmentTargets != address(0)) {
-            _executeSinglePunishment(record.enterprisePunishmentTargets, record);
+            _executeSinglePunishment(record.enterprisePunishmentTargets, record, fundManagerContract);
         }
 
         // 执行DAO成员惩罚
-        _executeRolePunishments(record.daoRewardPunishmentTargets, record);
+        _executeRolePunishments(record.daoRewardPunishmentTargets, record, fundManagerContract);
     }
 
     /**
@@ -526,14 +527,15 @@ contract RewardPunishmentManager is Ownable {
      */
     function _executeSinglePunishment(
         address target,
-        RewardPunishmentRecord storage record
+        RewardPunishmentRecord storage record,
+        IFundManager fundManagerContract
     ) internal {
         PersonalPunishment storage punishment = record.personalPunishments[target];
 
         if (punishment.amount > 0 && !punishment.executed) {
             // 更新用户统计
             totalUserPunishments[target] += punishment.amount;
-
+            fundManagerContract.decreaseRewardToDeposit(target, punishment.amount);
             // 标记为已执行
             punishment.executed = true;
 

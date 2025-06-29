@@ -218,6 +218,9 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
 
         // 发出投票事件
         emit Events.VoteSubmitted(caseId, msg.sender, choice, block.timestamp);
+
+        // 检查是否满足投票结束条件
+        _checkAndUpdateVotingStatus(caseId);
     }
 
     /**
@@ -378,6 +381,37 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
     // ==================== 内部函数 ====================
 
     /**
+     * @notice 检查并更新投票状态
+     * @dev 在提交投票后检查是否满足投票结束条件
+     * @param caseId 案件ID
+     */
+    function _checkAndUpdateVotingStatus(uint256 caseId) internal {
+        DataStructures.VotingSession storage session = votingSessions[caseId];
+
+        // 检查条件1：所有验证者都已完成投票
+        bool allVoted = session.totalVotes >= session.selectedValidators.length;
+
+        // 检查条件2：投票时间已结束
+        bool timeEnded = block.timestamp >= session.endTime;
+
+        // 如果满足任一条件且会话仍然活跃，否则结束投票
+        if ((allVoted || timeEnded) && session.isActive) {
+            session.isActive = false;
+            session.isCompleted = true;
+            session.complaintUpheld = session.supportVotes > session.rejectVotes;
+
+            // 发出投票完成事件
+            emit Events.VotingCompleted(
+                caseId,
+                session.complaintUpheld,
+                session.supportVotes,
+                session.rejectVotes,
+                block.timestamp
+            );
+        }
+    }
+
+    /**
      * @notice 验证质疑会话结束的前置条件
      */
     function _validateDisputeSessionEnd(DisputeSession storage session, uint256 caseId) internal view { // 质疑会话存储引用, 案件ID
@@ -432,7 +466,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
             }
         }
         bool newResult = votingSession.supportVotes > votingSession.rejectVotes;// 投诉是否成立
-        bool resultChanged = votingSession.complaintUpheld != newResult;
+        bool resultChanged = votingSession.complaintUpheld != newResult;//总结果是否改变
         // 计算最终结果
         votingSession.complaintUpheld = newResult;
         if (newResult) {
@@ -606,6 +640,15 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         if (session.caseId == 0 || !session.isActive) return false;
 
         return session.totalVotes >= session.selectedValidators.length;
+    }
+
+    /**
+     * @notice 检查投票会话是否已完成
+     */
+    function isVotingSessionCompleted(uint256 caseId) external view returns (bool) {
+        DataStructures.VotingSession storage session = votingSessions[caseId];
+        if (session.caseId == 0) return false;
+        return session.isCompleted;
     }
 
 
