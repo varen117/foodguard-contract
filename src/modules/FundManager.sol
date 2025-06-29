@@ -359,11 +359,8 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         DataStructures.UserDepositProfile storage profile = userProfiles[user];
 
         // 记录处理前的状态用于监控
-        uint256 currentTotalDeposit = profile.totalDeposit;
-        uint256 currentFrozenAmount = profile.frozenAmount;
-        uint256 currentActiveCaseCount = profile.activeCaseCount;
-        string memory descrption = "User deposit below liquidation threshold";
-        string memory action = "Operation restricted, existing cases preserved";
+        descrption = "User deposit below liquidation threshold";
+        action = "Operation restricted, existing cases preserved";
 
         // 验证状态一致性：确保用户状态正确设置
         if (profile.status != DataStructures.DepositStatus.LIQUIDATION) {

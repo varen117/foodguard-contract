@@ -55,6 +55,24 @@ library Events {
 
     );
 
+    event VoteSessionStart(
+        uint256 indexed caseId,
+        address[] validators,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 timestamp
+
+    );
+
+    event VoteStart(
+        uint256 indexed caseId,
+        address[] validators,
+        uint256 startTime,
+        uint256 endTime,
+        uint256 timestamp
+
+    );
+
     event VoteSubmitted(
         uint256 indexed caseId,
         address indexed voter,
@@ -223,7 +241,7 @@ library Events {
 
     /**
      * @notice 自动执行失败事件
-     * @param caseId 案件ID  
+     * @param caseId 案件ID
      * @param actionType 尝试执行的动作类型
      * @param actionName 动作名称描述
      * @param errorReason 失败原因
@@ -231,7 +249,7 @@ library Events {
      */
     event AutoExecutionFailed(
         uint256 indexed caseId,
-        uint256 indexed actionType, 
+        uint256 indexed actionType,
         string actionName,
         string errorReason,
         uint256 timestamp

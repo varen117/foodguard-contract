@@ -189,7 +189,8 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
         require(randomWords.length > 0, "Random words cannot be empty");
 
         // 获取可用的DAO成员作为验证者（排除已参与此案件的用户）
-        address[] memory availableValidators = _getAvailableParticipants(caseId, DataStructures.UserRole.DAO_MEMBER, randomWords);
+        address[] memory availableValidators = _getAvailableParticipants(caseId,
+            DataStructures.UserRole.DAO_MEMBER, randomWords);
         if (availableValidators.length < validatorConfig.minValidators) {
             revert Errors.InsufficientAvailableParticipants( caseId);
         }

@@ -94,7 +94,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     /// @dev 键值对：caseId => isActive，避免线性搜索activeCases数组
     mapping(uint256 => bool) public isCaseActive;
 
-    /// @notice Chainlink requestId => caseId
+    /// @notice 将请求ID与案件ID关联 Chainlink requestId => caseId
     mapping(uint256 => uint256) public caseRequestIds;
 
     // ==================== 结构体定义 ====================
@@ -447,12 +447,12 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
 
         // 确定验证者数量（基于风险等级动态调整）
         uint256 validatorCount = config.minValidators; // 验证者数量
-        if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
-            validatorCount = config.maxValidators > 7 ? 7 : config.maxValidators; // 高风险案件更多验证者
-        } else if (caseInfo.riskLevel == DataStructures.RiskLevel.MEDIUM) {
-            validatorCount = config.minValidators + 2; // 中风险案件适中验证者
-        }
-
+//        if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
+//            validatorCount = config.maxValidators > 7 ? 7 : config.maxValidators; // 高风险案件更多验证者
+//        } else if (caseInfo.riskLevel == DataStructures.RiskLevel.MEDIUM) {
+//            validatorCount = config.minValidators + 2; // 中风险案件适中验证者
+//        }
+        validatorCount = 3; // // todo 便于测试统一设置成3，后续delete
         // 确保验证者数量为奇数
         if (validatorCount % 2 == 0) {
             validatorCount += 1;
@@ -485,7 +485,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         // 使用ParticipantPoolManager随机选择验证者
         address[] memory selectedValidators = poolManager.selectValidators(caseId, randomWords); // 选中的验证者地址数组
         DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
-        // 将选中的验证者传递给VotingDisputeManager开始投票
+        // 将选中的验证者传递给VotingDisputeManager开启投票
         votingDisputeManager.startVotingSessionWithValidators(
             caseId,
             selectedValidators,
@@ -504,23 +504,23 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         );
 
         // 发出验证者选择事件
-        emit Events.ValidatorsSelected(caseId, selectedValidators, block.timestamp, block.timestamp + config.votingPeriod, block.timestamp);
+        emit Events.VoteStart(caseId, selectedValidators, block.timestamp, block.timestamp + config.votingPeriod, block.timestamp);
     }
 
-    // ==================== 自动触发动作 ====================
+    // ==================== 结束投票并开启质疑阶段 ====================
     function checkUpkeep(bytes memory /* checkData */)
     public
     view
     override
     returns (bool upkeepNeeded, bytes memory performData)
     {
-        // 优化版本：只检查活跃案件列表，避免遍历所有历史案件，显著提升性能
+        // 只检查活跃案件列表，避免遍历所有历史案件，显著提升性能
         uint256 activeCaseCount = activeCases.length;
         uint256[] memory casesToProcess = new uint256[](activeCaseCount);
         uint256[] memory actionTypes = new uint256[](activeCaseCount); // 0: endVoting, 1: endChallenge
         uint256 count = 0;
 
-        // 只遍历活跃案件列表，大幅减少遍历次数
+        // 历活跃案件列表
         for (uint256 i = 0; i < activeCaseCount; i++) {
             uint256 caseId = activeCases[i];
             CaseInfo storage caseInfo = cases[caseId];

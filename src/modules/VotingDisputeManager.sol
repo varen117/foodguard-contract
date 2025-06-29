@@ -118,7 +118,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
     // ==================== 投票管理函数 ====================
 
     /**
-     * @notice 开始投票会话（指定验证者）
+     * @notice 开始投票会话
      */
     function startVotingSessionWithValidators(
         uint256 caseId, // 案件ID
@@ -147,8 +147,8 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         session.isActive = true;
         session.isCompleted = false;
 
-        // 发出验证者选择事件
-        emit Events.ValidatorsSelected(caseId, selectedValidators,session.startTime, session.endTime , block.timestamp);
+        // 发出投票会话开始事件
+        emit Events.VoteSessionStart(caseId, selectedValidators,session.startTime, session.endTime , block.timestamp);
 
         return selectedValidators;
     }
@@ -604,7 +604,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
     function areAllValidatorsVoted(uint256 caseId) external view returns (bool) {
         DataStructures.VotingSession storage session = votingSessions[caseId];
         if (session.caseId == 0 || !session.isActive) return false;
-        
+
         return session.totalVotes >= session.selectedValidators.length;
     }
 
