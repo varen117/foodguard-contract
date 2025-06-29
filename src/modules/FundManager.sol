@@ -64,7 +64,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     /// @notice 系统常量定义 - 规定系统运行的基本限制
     uint256 public constant MIN_DEPOSIT = 0.01 ether; // 最小保证金：0.01 ETH
     uint256 public constant MAX_CONCURRENT_CASES = 10; // 最大并发案件数：10个
-    uint256 public constant LIQUIDATION_PENALTY_RATE = 10; // 清算罚金比例：10%
 
     // ==================== 治理合约设置 ====================
 
@@ -296,12 +295,10 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
 
         uint256 totalDeposit = profile.totalDeposit;
         uint256 requiredAmount = profile.requiredAmount;
-
+        string memory descrption;
+        string memory action;
         // 如果用户没有活跃案件，直接设为健康状态
-        if (requiredAmount == 0) {
-            profile.status = DataStructures.DepositStatus.HEALTHY;
-            return;
-        }
+        profile.status = requiredAmount == 0 ? DataStructures.DepositStatus.HEALTHY : profile.status;
 
         // 计算保证金覆盖率（百分比）
         // 覆盖率 = 用户拥有的保证金 / 系统要求的保证金 * 100%
@@ -318,246 +315,67 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
             profile.status = DataStructures.DepositStatus.WARNING;
             profile.operationRestricted = false;
             profile.lastWarningTime = block.timestamp; // 记录警告时间
-
-            // 只记录业务异常，不发出专门的警告事件
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "Deposit Status Check",
-                "Warning: deposit below warning threshold",
-                "User advised to top up deposit",
-                block.timestamp
-            );
-        } else if (coverage >= dynamicConfig.liquidationThreshold) {
-            // 限制状态（110%-120%）：保证金严重不足，限制高风险操作
-            profile.status = DataStructures.DepositStatus.RESTRICTED;
-            profile.operationRestricted = true; // 开始限制用户操作
-
-            // 只记录业务异常
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "Deposit Status Check",
-                "Restriction: deposit below restriction threshold",
-                "User operations restricted",
-                block.timestamp
-            );
+            descrption = "Warning: deposit below warning threshold";
+            action = "User advised to top up deposit";
         } else {
-            // 清算状态（<110%）：保证金极度不足，触发强制清算
+            // 清算状态（<110%）：保证金极度不足，限制用户后续活动
             profile.status = DataStructures.DepositStatus.LIQUIDATION;
-            profile.operationRestricted = true; // 完全限制用户操作
+            profile.operationRestricted = true; // 完全限制用户新操作
 
-            // 触发清算流程，保护系统安全
-            _triggerLiquidation(user);
+            // 只有状态改变时才处理清算逻辑，避免重复处理
+            if (oldStatus != DataStructures.DepositStatus.LIQUIDATION) {
+                // 只限制用户活动，不强制退出已有案件
+                (descrption, action) = _handleUserInsufficientFunds(user);
+
+            }
         }
-
-        // 如果状态发生变化，记录变化
-        if (oldStatus != profile.status) {
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "Deposit Status Update",
-                "User deposit status changed",
-                "Status updated based on coverage",
-                block.timestamp
-            );
-        }
-    }
-
-    /**
-     * @notice 触发用户清算
-     * @dev 强制清算机制，当用户保证金严重不足时自动执行
-     * 清算流程设计：
-     * 1. 强制退出所有案件并解冻保证金：避免资金状态不一致
-     * 2. 计算清算罚金（10%）：基于解冻后的实际可用资金
-     * 3. 将罚金转入系统资金池：增强系统资金实力
-     * 清算的必要性：保护系统免受无力承担责任的用户影响
-     *
-     * 说明：先解冻再扣罚金，避免资金状态不一致导致的下溢风险
-     * @param user 被清算的用户地址
-     */
-    function _triggerLiquidation(address user) internal {
-        DataStructures.UserDepositProfile storage profile = userProfiles[user];
-
-        // 记录清算前的状态用于异常检测
-        uint256 preExitFrozenAmount = profile.frozenAmount;
-        uint256 preExitTotalDeposit = profile.totalDeposit;
-
-        // 步骤1：先强制退出所有活跃案件并解冻保证金
-        // 这样可以确保所有冻结资金都正确释放，避免状态不一致
-        _forceExitAllCases(user);
-
-
-        if (profile.activeCaseCount != 0) {
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "User Liquidation",
-                "Non-zero active case count after force exit",
-                "Reset active case count to zero",
-                block.timestamp
-            );
-            profile.activeCaseCount = 0; // 强制修复
-        }
-
-        // 步骤2：基于解冻后的实际资金计算罚金
-        uint256 totalDeposit = profile.totalDeposit; // 获取解冻后的总保证金
-
-        // 异常检测2：验证保证金计算的合理性
-        if (totalDeposit > preExitTotalDeposit) {
-            // 理论上总保证金不应该在清算过程中增加
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "User Liquidation",
-                "Total deposit increased during liquidation process",
-                "Continue with warning",
-                block.timestamp
-            );
-        }
-
-        uint256 penalty = (totalDeposit * LIQUIDATION_PENALTY_RATE) / 100;
-        uint256 liquidatedAmount = totalDeposit > penalty ? totalDeposit - penalty : 0;
-
-        // 异常检测3：验证罚金计算的合理性
-        if (penalty > totalDeposit) {
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "User Liquidation",
-                "Calculated penalty exceeds total deposit",
-                "Adjust penalty to total deposit amount",
-                block.timestamp
-            );
-            penalty = totalDeposit; // 调整为最大可能值
-            liquidatedAmount = 0;
-        }
-
-        // 步骤3：扣除惩罚金并转入系统资金池
-        if (penalty > 0 && totalDeposit >= penalty) {
-            profile.totalDeposit -= penalty; // 从用户保证金中扣除罚金
-            _addToFundPool(penalty, "Liquidation penalty"); // 罚金进入系统资金池
-        } else if (penalty > 0) {
-            // 异常情况：无法扣除足够的罚金
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "User Liquidation",
-                "Insufficient funds for penalty deduction",
-                "Skip penalty deduction",
-                block.timestamp
-            );
-        }
-
-        // 发出清算事件，记录清算详情
+        // 记录状态变化事件
         emit Events.BusinessProcessAnomaly(
             0,
             user,
-            "User Liquidation",
-            "User liquidated due to insufficient deposit coverage",
-            "Assets liquidated and penalty applied",
+            "User Insufficient Funds",
+            descrption,
+            action,
             block.timestamp
         );
 
-        // 最终状态验证
-        if (profile.totalDeposit < 0) {
-            // 这应该永远不会发生，但作为最后的安全检查
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "User Liquidation",
-                "Negative total deposit after liquidation",
-                "Force reset to zero",
-                block.timestamp
-            );
-            profile.totalDeposit = 0; // 强制修复
-        }
     }
 
     /**
-     * @notice 强制用户退出所有案件
-     * @dev 安全的保证金解冻机制，添加下溢保护
+     * @notice 处理用户保证金不足的情况
+     * @dev 新的清算机制：只限制用户活动，不强制退出已有案件
+     * 处理逻辑：
+     * 1. 限制用户所有新的案件操作：防止进一步风险暴露
+     * 2. 保留已经进行中的案件：这些案件的保证金在参与时是足够的
+     * 3. 记录状态变化：便于审计和监控
+     * 设计原理：
+     * - 已经参与的案件在参与时保证金是充足的，系统已验证过风险
+     * - 只需要防止用户参与新的案件，避免进一步扩大风险敞口
+     * - 保护现有案件的参与者和系统的稳定性
      *
-     * 设计说明：为什么要逐个解冻而不是直接归零？
-     * 1. 事件完整性：每个案件解冻都需要独立的事件记录，便于外部系统监听
-     * 2. 状态验证：通过逐个解冻可以检测系统状态是否一致，发现潜在问题
-     * 3. 数据清理：必须清除每个案件在caseFrozenDeposits中的记录
-     * 4. 审计跟踪：提供完整的资金流动记录，便于问题排查和审计
-     * 5. 安全性：逐步验证比直接操作更安全，可以暴露隐藏的系统问题
-     *
-     * 虽然直接 profile.frozenAmount = 0 更简洁，但会丢失重要信息且可能掩盖系统bug
-     *
-     * @param user 用户地址
+     * @param user 保证金不足的用户地址
      */
-    function _forceExitAllCases(address user) internal {
-        uint256[] storage activeCases = userActiveCases[user];
+    function _handleUserInsufficientFunds(address user) internal returns (string memory descrption, string memory action){
         DataStructures.UserDepositProfile storage profile = userProfiles[user];
 
-        // 记录解冻前的总金额，用于验证
-        uint256 initialFrozenAmount = profile.frozenAmount;
-        uint256 totalUnfrozen = 0;
+        // 记录处理前的状态用于监控
+        uint256 currentTotalDeposit = profile.totalDeposit;
+        uint256 currentFrozenAmount = profile.frozenAmount;
+        uint256 currentActiveCaseCount = profile.activeCaseCount;
+        string memory descrption = "User deposit below liquidation threshold";
+        string memory action = "Operation restricted, existing cases preserved";
 
-        for (uint256 i = 0; i < activeCases.length; i++) {
-            uint256 caseId = activeCases[i];
-            uint256 frozenAmount = caseFrozenDeposits[caseId][user]; // 添加映射名称
-
-            if (frozenAmount > 0) {
-                // 安全检查：防止下溢导致的revert
-                if (profile.frozenAmount >= frozenAmount) {
-                    // 正常解冻保证金：实际释放用户的冻结资金
-                    profile.frozenAmount -= frozenAmount;
-                    totalUnfrozen += frozenAmount;
-                } else {
-                    // 异常情况：档案中的冻结金额不足，强制归零确保继续执行
-                    totalUnfrozen += profile.frozenAmount; // 记录实际解冻的金额
-                    profile.frozenAmount = 0;
-                }
-                // 清除案件相关的冻结记录
-                caseFrozenDeposits[caseId][user] = 0;
-
-                // 为每个案件发出解冻事件，便于外部系统追踪
-                emit Events.DepositUnfrozen(
-                    caseId,
-                    user,
-                    frozenAmount,
-                    block.timestamp
-                );
-            }
+        // 验证状态一致性：确保用户状态正确设置
+        if (profile.status != DataStructures.DepositStatus.LIQUIDATION) {
+            descrption = "Status not set to LIQUIDATION";
+            action = "Force set status to LIQUIDATION";
+            profile.status = DataStructures.DepositStatus.LIQUIDATION;
         }
 
-        // 清空活跃案件列表和相关计数
-        delete userActiveCases[user];
-        profile.activeCaseCount = 0;
-        profile.requiredAmount = 0; // 重置所需保证金
-
-        // 最终状态一致性检查：检测并处理系统异常
-        if (profile.frozenAmount > 0) {
-
-            // 记录异常并修复
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "Force Exit Cases",
-                "Residual frozen amount after case exits",
-                "Force reset frozen amount to zero",
-                block.timestamp
-            );
-
-            // 强制归零，确保状态一致性
-            profile.frozenAmount = 0;
-        }
-
-        // 验证总解冻金额的一致性
-        if (totalUnfrozen != initialFrozenAmount && initialFrozenAmount > 0) {
-            // 检测到解冻金额与初始冻结金额不一致
-            emit Events.BusinessProcessAnomaly(
-                0,
-                user,
-                "Force Exit Cases",
-                "Total unfrozen amount mismatch with initial frozen amount",
-                "Continue with warning",
-                block.timestamp
-            );
+        if (!profile.operationRestricted) {
+            descrption = "Operation not restricted";
+            action = "Force set operation restriction";
+            profile.operationRestricted = true;
         }
     }
 
@@ -926,8 +744,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     ) external onlyGovernanceOrDelegated {
         dynamicConfig = newConfig;
     }
-
-
 
     /**
      * @notice 批量检查用户状态
