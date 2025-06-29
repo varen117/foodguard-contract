@@ -66,6 +66,9 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     uint32 private callbackGasLimit = 40000;
     uint16 private requestConfirmations = 3;
 
+    /// @notice VRF配置是否已初始化
+    bool public vrfConfigured = false;
+
     // ==================== 状态变量 ====================
 
     /// @notice 案件计数器 - 系统中创建的案件总数，也用作新案件的唯一ID
@@ -189,6 +192,87 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         votingDisputeManager = VotingDisputeManager(_votingDisputeManager);
         rewardManager = RewardPunishmentManager(_rewardManager);
         poolManager = ParticipantPoolManager(_poolManager);
+    }
+
+    /**
+     * @notice 初始化VRF配置
+     * @param _subscriptionId Chainlink VRF订阅ID
+     * @param _vrfCoordinator VRF协调器地址
+     * @param _keyHash VRF密钥哈希
+     * @param _callbackGasLimit 回调Gas限制
+     * @param _requestConfirmations 请求确认数
+     */
+    function initializeVRF(
+        uint256 _subscriptionId,
+        address _vrfCoordinator,
+        bytes32 _keyHash,
+        uint32 _callbackGasLimit,
+        uint16 _requestConfirmations
+    ) external onlyAdmin {
+        require(_subscriptionId > 0, "Invalid subscription ID");
+        require(_vrfCoordinator != address(0), "Invalid VRF coordinator address");
+        require(_keyHash != bytes32(0), "Invalid key hash");
+        require(_callbackGasLimit >= 20000, "Gas limit too low");
+        require(_requestConfirmations >= 1, "Invalid confirmation count");
+
+        s_subscriptionId = _subscriptionId;
+        vrfCoordinator = _vrfCoordinator;
+        s_keyHash = _keyHash;
+        callbackGasLimit = _callbackGasLimit;
+        requestConfirmations = _requestConfirmations;
+        vrfConfigured = true;
+
+        emit Events.SystemConfigUpdated("VRF", "VRF configuration updated");
+    }
+
+
+
+    /**
+     * @notice 验证系统配置完整性
+     * @return isValid 配置是否有效
+     * @return issues 配置问题列表
+     */
+    function validateConfiguration() external view returns (bool isValid, string[] memory issues) {
+        string[] memory problems = new string[](10);
+        uint256 count = 0;
+
+        // 检查VRF配置
+        if (s_subscriptionId == 0) {
+            problems[count++] = "VRF subscription ID not set";
+        }
+        
+        if (vrfCoordinator == address(0)) {
+            problems[count++] = "VRF coordinator not set";
+        }
+        
+        if (!vrfConfigured) {
+            problems[count++] = "VRF not configured";
+        }
+
+        // 检查模块合约
+        if (address(fundManager) == address(0)) {
+            problems[count++] = "Fund manager not set";
+        }
+        
+        if (address(votingDisputeManager) == address(0)) {
+            problems[count++] = "Voting dispute manager not set";
+        }
+        
+        if (address(rewardManager) == address(0)) {
+            problems[count++] = "Reward manager not set";
+        }
+        
+        if (address(poolManager) == address(0)) {
+            problems[count++] = "Pool manager not set";
+        }
+
+        // 创建实际大小的数组
+        string[] memory actualIssues = new string[](count);
+        for (uint256 i = 0; i < count; i++) {
+            actualIssues[i] = problems[i];
+        }
+
+        return (count == 0, actualIssues);
     }
 
     // ==================== 核心流程函数 ====================
@@ -479,6 +563,10 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
 
     // VRF获取随机数
     function sendRandomWordsRequest(uint32 _numWords) external returns (uint256) {
+        // 检查VRF配置是否已初始化
+        require(vrfConfigured, "VRF not configured");
+        require(s_subscriptionId > 0, "Invalid subscription ID");
+        
         // 获取随机数（组装请求参数）
         VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest({
             keyHash: s_keyHash,//chainlink中VRF创建的订阅 keyhash

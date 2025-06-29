@@ -62,7 +62,6 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
 
     /// @notice 质疑者选择配置
     struct ChallengerConfig {
-        uint256 maxChallengersPerValidator; // 每个验证者最多质疑者数量（偶数）
         uint256 minChallengerReputation;    // 质疑者最低声誉要求
     }
 
@@ -91,7 +90,6 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
 
         // 初始化质疑者配置
         challengerConfig = ChallengerConfig({
-            maxChallengersPerValidator: 4, // 每个验证者最多4个质疑者（偶数）
             minChallengerReputation: 500   // 质疑者最低声誉500分
         });
 
@@ -393,7 +391,7 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
      * @notice 更新质疑者配置
      */
     function updateChallengerConfig(ChallengerConfig calldata newConfig) external onlyOwner {
-        require(newConfig.maxChallengersPerValidator % 2 == 0, "Max challengers must be even");
+        require(newConfig.minChallengerReputation > 0, "Invalid min reputation");
         challengerConfig = newConfig;
     }
 

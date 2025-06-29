@@ -72,28 +72,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     // ==================== 修饰符 ====================
 
     /**
-     * @notice 检查用户保证金状态是否健康
-     * @dev 在执行重要操作前确保用户状态符合要求
-     * 1. 更新用户状态，重新计算保证金覆盖率
-     * 2. 禁止清算状态用户进行操作
-     * 3. 禁止操作受限用户进行高风险操作
-     * @param user 要检查的用户地址
-     */
-    modifier onlyHealthyUser(address user) {
-        _updateUserStatus(user); // 先更新用户状态，确保数据最新
-        DataStructures.UserDepositProfile storage profile = userProfiles[user];
-        // 清算状态的用户不能进行任何操作
-        if (profile.status == DataStructures.DepositStatus.LIQUIDATION) {
-            revert Errors.UserInLiquidation(user);
-        }
-        // 操作受限的用户不能进行高风险操作
-        if (profile.operationRestricted) {
-            revert Errors.UserOperationRestricted(user, "Insufficient deposit");
-        }
-        _;
-    }
-
-    /**
      * @notice 检查地址是否为零地址
      * @dev 防止将关键合约地址设置为零地址
      * 零地址会导致资金丢失或功能失效
@@ -116,7 +94,7 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
             minEnterpriseDeposit: 0.1 ether,
             minDaoDeposit: 0.05 ether,
 //            votingPeriod: 259200,//三天 todo 方便测试，暂时注释
-            votingPeriod: 200,//单位秒（一分钟）
+            votingPeriod: 200,//单位秒（两分钟）
 //            challengePeriod: 172800,todo 方便测试，暂时注释
             challengePeriod: 200,
             minValidators: 3,
@@ -337,7 +315,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     external
     whenNotPaused
     nonReentrant
-    onlyHealthyUser(msg.sender)
     {
         if (amount == 0) {
             revert Errors.InvalidAmount(amount, 1);
@@ -693,15 +670,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     }
 
     // ==================== 管理函数 ====================
-
-    /**
-     * @notice 更新动态保证金配置
-     */
-    function updateDynamicConfig(
-        DataStructures.DynamicDepositConfig calldata newConfig
-    ) external {
-        dynamicConfig = newConfig;
-    }
 
     /**
      * @notice 向资金池添加资金

@@ -236,6 +236,11 @@ event RewardDistribution(
         uint256 timestamp
     );
 
+    event SystemConfigUpdated(
+        string configType,
+        string description
+    );
+
     // ==================== 自动执行事件 ====================
 
     /**

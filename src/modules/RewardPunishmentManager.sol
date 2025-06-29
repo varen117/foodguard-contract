@@ -47,6 +47,9 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
     /// @dev 键值对：caseId => processed，确保每个案件只处理一次奖惩
     mapping(uint256 => bool) public caseProcessed;
 
+    /// @notice 奖惩配置
+    RewardPunishmentConfig public rewardConfig;
+
     // ==================== 结构体定义 ====================
 
     /**
@@ -106,6 +109,17 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
         mapping(address => bool) challengeResults;
     }
 
+    /**
+     * @notice 奖惩配置结构体
+     */
+    struct RewardPunishmentConfig {
+        uint256 highRiskPunishmentRate;    // 高风险惩罚比例（基点，如10000 = 100%）
+        uint256 mediumRiskPunishmentRate;  // 中风险惩罚比例
+        uint256 lowRiskPunishmentRate;     // 低风险惩罚比例
+        uint256 rewardDistributionRate;    // 奖励分配比例（投诉成立时，惩罚金的多少比例用于奖励）
+        uint256 fundPoolContributionRate;  // 基金池贡献比例（投诉成立时，惩罚金的多少比例进入基金池）
+    }
+
     // ==================== 修饰符 ====================
 
     /**
@@ -121,6 +135,45 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
     // ==================== 构造函数 ====================
 
     constructor(address _admin) Ownable(_admin) {
+        // 初始化默认奖惩配置
+        rewardConfig = RewardPunishmentConfig({
+            highRiskPunishmentRate: 10000,     // 100% (10000基点)
+            mediumRiskPunishmentRate: 5000,    // 50% (5000基点)
+            lowRiskPunishmentRate: 2000,       // 20% (2000基点)
+            rewardDistributionRate: 8000,      // 80% (8000基点)
+            fundPoolContributionRate: 2000     // 20% (2000基点)
+        });
+    }
+
+    // ==================== 配置管理函数 ====================
+
+    /**
+     * @notice 更新奖惩配置
+     * @param newConfig 新的奖惩配置
+     */
+    function updateRewardPunishmentConfig(RewardPunishmentConfig calldata newConfig) external onlyOwner {
+        require(newConfig.highRiskPunishmentRate <= 10000, "Invalid high risk rate");
+        require(newConfig.mediumRiskPunishmentRate <= 10000, "Invalid medium risk rate");
+        require(newConfig.lowRiskPunishmentRate <= 10000, "Invalid low risk rate");
+        require(newConfig.rewardDistributionRate + newConfig.fundPoolContributionRate == 10000, "Rates must sum to 100%");
+
+        rewardConfig = newConfig;
+        emit Events.SystemConfigUpdated("RewardPunishment", "Reward punishment configuration updated");
+    }
+
+    /**
+     * @notice 获取惩罚比例
+     * @param riskLevel 风险等级
+     * @return 惩罚比例（基点）
+     */
+    function getPunishmentRate(DataStructures.RiskLevel riskLevel) public view returns (uint256) {
+        if (riskLevel == DataStructures.RiskLevel.HIGH) {
+            return rewardConfig.highRiskPunishmentRate;
+        } else if (riskLevel == DataStructures.RiskLevel.MEDIUM) {
+            return rewardConfig.mediumRiskPunishmentRate;
+        } else {
+            return rewardConfig.lowRiskPunishmentRate;
+        }
     }
 
     // ==================== 核心奖惩处理函数 ====================
@@ -203,14 +256,7 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
         DataStructures.SystemConfig memory config = fundManagerContract.getSystemConfig();
 
         // 根据风险等级确定惩罚比例
-        uint256 punishmentRate;
-        if (record.riskLevel == DataStructures.RiskLevel.HIGH) {
-            punishmentRate = 100; // 高风险：100%的保证金作为惩罚
-        } else if (record.riskLevel == DataStructures.RiskLevel.MEDIUM) {
-            punishmentRate = 50;  // 中风险：50%的保证金作为惩罚
-        } else {
-            punishmentRate = 20;  // 低风险：20%的保证金作为惩罚
-        }
+        uint256 punishmentRate = getPunishmentRate(record.riskLevel);
 
         // 计算总惩罚金额
         uint256 totalPunishments = 0;
@@ -218,20 +264,20 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
         // 计算DAO成员惩罚金额（验证者和质疑者）
         for (uint256 i = 0; i < record.daoRewardPunishmentTargets.length; i++) {
             uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.daoRewardPunishmentTargets[i]);
-            totalPunishments += (userDeposit * punishmentRate) / 100;
+            totalPunishments += (userDeposit * punishmentRate) / 10000;
         }
 
         if (record.complaintUpheld) {
             // 投诉成立：企业受惩罚
             if (record.enterprisePunishmentTargets != address(0)) {
                 uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.enterprisePunishmentTargets);
-                totalPunishments += (userDeposit * punishmentRate) / 100;
+                totalPunishments += (userDeposit * punishmentRate) / 10000;
             }
             } else {
             // 投诉不成立：投诉者受惩罚
             if (record.complainantPunishmentTarget != address(0)) {
                 uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.complainantPunishmentTarget);
-                totalPunishments += (userDeposit * punishmentRate) / 100;
+                totalPunishments += (userDeposit * punishmentRate) / 10000;
             }
         }
 
@@ -240,8 +286,8 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
         // 计算可用于奖励的金额
         uint256 availableRewardAmount;
         if (record.complaintUpheld) {
-            // 投诉成立：totalPunishments的80%用于奖励金额，20%存入基金库
-            availableRewardAmount = (totalPunishments * 80) / 100;
+            // 投诉成立：使用配置的奖励分配比例
+            availableRewardAmount = (totalPunishments * rewardConfig.rewardDistributionRate) / 10000;
         } else {
             // 投诉不成立：全部惩罚金额用于奖励
             availableRewardAmount = totalPunishments;
@@ -306,14 +352,7 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
         }
 
         // 分配惩罚 - 根据实际保证金和风险等级计算
-        uint256 punishmentRate;
-        if (record.riskLevel == DataStructures.RiskLevel.HIGH) {
-            punishmentRate = 100; // 高风险：100%的保证金作为惩罚
-        } else if (record.riskLevel == DataStructures.RiskLevel.MEDIUM) {
-            punishmentRate = 50;  // 中风险：50%的保证金作为惩罚
-        } else {
-            punishmentRate = 20;  // 低风险：20%的保证金作为惩罚
-        }
+        uint256 punishmentRate = getPunishmentRate(record.riskLevel);
 
         // 分配投诉者惩罚（如果有）
         if (record.complainantPunishmentTarget != address(0)) {
@@ -359,7 +398,7 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
     ) internal {
         if (target != address(0)) {
             uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, target);
-            uint256 punishmentAmount = (userDeposit * punishmentRate) / 100;
+            uint256 punishmentAmount = (userDeposit * punishmentRate) / 10000;
 
             record.personalPunishments[target] = PersonalPunishment({
                 amount: punishmentAmount,
@@ -381,7 +420,7 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
     ) internal {
         for (uint256 i = 0; i < targets.length; i++) {
             uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, targets[i]);
-            uint256 punishmentAmount = (userDeposit * punishmentRate) / 100;
+            uint256 punishmentAmount = (userDeposit * punishmentRate) / 10000;
 
             record.personalPunishments[targets[i]] = PersonalPunishment({
                 amount: punishmentAmount,
@@ -478,9 +517,9 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
         // 执行惩罚
         _executePunishments(record, fundManagerContract);
 
-        // 如果投诉成立，将惩罚的20%存入基金库
+        // 如果投诉成立，将配置的惩罚比例存入基金库
         if (record.complaintUpheld) {
-            uint256 toFundPool = (record.totalPunishmentAmount * 20) / 100;
+            uint256 toFundPool = (record.totalPunishmentAmount * rewardConfig.fundPoolContributionRate) / 10000;
 
             // 这里应该调用fundManager将资金转入基金库
             fundManagerContract.addToFundPool(toFundPool, "Punishment penalty");
@@ -674,19 +713,28 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
 
     /**
      * @notice 设置资金管理合约地址
+     * @param _fundManager 资金管理合约地址
      */
     function setFundManager(address _fundManager) external onlyOwner {
-        if (_fundManager == address(0)) {
-            revert Errors.ZeroAddress();
-        }
+        require(_fundManager != address(0), "Invalid fund manager address");
         fundManager = _fundManager;
+        emit Events.SystemConfigUpdated("FundManager", "Fund manager address updated");
     }
 
     /**
      * @notice 设置治理合约地址并授予治理权限
-     * @dev 使用统一的治理设置方法，保证一致性
+     * @param _governanceContract 治理合约地址
      */
     function setGovernanceContract(address _governanceContract) external onlyOwner {
         _setGovernanceRole(_governanceContract, "RewardPunishmentManager");
+        emit Events.SystemConfigUpdated("Governance", "Governance contract updated");
+    }
+
+    /**
+     * @notice 获取完整的奖惩配置
+     * @return 当前的奖惩配置
+     */
+    function getRewardPunishmentConfig() external view returns (RewardPunishmentConfig memory) {
+        return rewardConfig;
     }
 }

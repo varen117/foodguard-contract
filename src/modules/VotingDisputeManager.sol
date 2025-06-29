@@ -23,36 +23,31 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
     /// @notice 参与者池管理合约实例
     IParticipantPoolManager public poolManager;
 
-    // ========== 投票相关状态变量 ==========
-
-    /// @notice 案件的投票信息映射 (案件ID => 投票会话)
+    /// @notice 投票会话映射 caseId => VotingSession
     mapping(uint256 => DataStructures.VotingSession) public votingSessions;
 
-    /// @notice 用户参与的投票记录 (用户地址 => 案件ID => 是否已投票)
-    mapping(address => mapping(uint256 => bool)) public userVotingHistory;
-
-    // ========== 质疑相关状态变量 ==========
-
-    /// @notice 案件质疑会话映射 (案件ID => 质疑会话)
+    /// @notice 质疑会话映射 caseId => DisputeSession  
     mapping(uint256 => DisputeSession) public disputeSessions;
 
-    /// @notice 用户质疑历史记录映射 (用户地址 => 案件ID => 是否已质疑)
+    /// @notice 用户投票历史 user => caseId => hasVoted
+    mapping(address => mapping(uint256 => bool)) public userVotingHistory;
+
+    /// @notice 用户质疑历史 user => caseId => hasDisputed
     mapping(address => mapping(uint256 => bool)) public userDisputeHistory;
 
-    /// @notice 验证者被质疑次数统计映射 (验证者地址 => 被质疑次数)
-
-
-    /// @notice 质疑者成功质疑次数统计映射 (质疑者地址 => 成功次数)
+    /// @notice 质疑者成功次数统计 challenger => successCount
     mapping(address => uint256) public challengerSuccessCount;
 
-    /// @notice 质疑者总参与次数统计映射 (质疑者地址 => 总参与次数)
+    /// @notice 质疑者总次数统计 challenger => totalCount
     mapping(address => uint256) public challengerTotalCount;
 
-    /// @notice 奖励成员列表 (案件ID => 用户角色 => 地址列表)
+    /// @notice 奖励成员列表 caseId => role => address[]
     mapping(uint256 => mapping(DataStructures.UserRole => address[])) public rewardMember;
 
-    /// @notice 惩罚成员列表 (案件ID => 用户角色 => 地址列表)
+    /// @notice 惩罚成员列表 caseId => role => address[]
     mapping(uint256 => mapping(DataStructures.UserRole => address[])) public punishMember;
+
+
 
     // ==================== 结构体定义 ====================
 
@@ -60,15 +55,15 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
      * @notice 质疑会话结构体
      */
     struct DisputeSession {
-        uint256 caseId; // 案件ID
-        bool isActive; // 是否活跃
-        bool isCompleted; // 是否已完成
-        uint256 startTime; // 开始时间
-        uint256 endTime; // 结束时间
-        uint256 totalChallenges; // 总质疑数量
+        uint256 caseId;                    // 案件ID
+        bool isActive;                     // 是否活跃
+        bool isCompleted;                  // 是否完成
+        uint256 startTime;                 // 开始时间
+        uint256 endTime;                   // 结束时间
+        uint256 totalChallenges;           // 总质疑数量
+        mapping(address => bool) challengers;  // 质疑者记录 challenger => hasChallenged
         DataStructures.ChallengeInfo[] challenges; // 质疑信息数组
-        mapping(address => DataStructures.ChallengeVotingInfo) challengeVotingInfo; // 质疑投票信息 (目标验证者 => 投票信息)
-        mapping(address => bool) challengers; // 质疑者映射 (质疑者地址 => 是否已质疑)
+        mapping(address => DataStructures.ChallengeVotingInfo) challengeVotingInfo; // 质疑投票信息
     }
 
     /**
@@ -82,6 +77,8 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         address[] rewardedMembers; // 获得奖励的成员
         address[] punishedMembers; // 受到惩罚的成员
     }
+
+
 
     // ==================== 修饰符 ====================
 
@@ -113,7 +110,8 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
 
     // ==================== 构造函数 ====================
 
-    constructor(address initialOwner) Ownable(initialOwner) {} // 初始所有者地址
+    constructor(address initialOwner) Ownable(initialOwner) {
+    }
 
     // ==================== 投票管理函数 ====================
 
@@ -375,8 +373,6 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
 
         return newResult;
     }
-
-
 
     // ==================== 内部函数 ====================
 
@@ -651,8 +647,6 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         return session.isCompleted;
     }
 
-
-
     // ==================== 管理函数 ====================
 
     /**
@@ -663,18 +657,24 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
         _setGovernanceRole(_governanceContract, "VotingDisputeManager");
     }
 
+
+
     /**
      * @notice 设置资金管理合约地址
+     * @param _fundManager 资金管理合约地址
      */
     function setFundManager(address _fundManager) external onlyOwner notZeroAddress(_fundManager) { // 资金管理合约地址
         fundManager = IFundManager(_fundManager);
+        emit Events.SystemConfigUpdated("FundManager", "Fund manager updated");
     }
 
     /**
      * @notice 设置参与者池管理合约地址
+     * @param _poolManager 参与者池管理合约地址
      */
     function setPoolManager(address _poolManager) external onlyOwner notZeroAddress(_poolManager) { // 参与者池管理合约地址
         poolManager = IParticipantPoolManager(_poolManager);
+        emit Events.SystemConfigUpdated("PoolManager", "Pool manager updated");
     }
 
     /**
@@ -691,6 +691,4 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
 
         emit Events.EmergencyTriggered(caseId, "Emergency pause of dispute session", msg.sender, block.timestamp);
     }
-
-
 }
