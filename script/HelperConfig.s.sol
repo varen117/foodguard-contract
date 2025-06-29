@@ -15,7 +15,8 @@ abstract contract CodeConstants {
     // LINK / ETH price
     int256 public constant MOCK_WEI_PER_UINT_LINK = 4e15; // 1 LINK 的价格为0.004 ETH
     // 默认发送人（每当foundry需要某个地址发送某些东西时都会用这个默认地址），只在本地链（如 Anvil）有意义，私钥是公开的，适合开发测试。
-    address public constant FOUNDRY_DEFAULT_SENDER = 0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38;
+    address public constant FOUNDRY_DEFAULT_SENDER =
+        0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38;
 
     uint256 public constant ETH_SEPOLIA_CHAIN_ID = 11155111;
     uint256 public constant ETH_MAINNET_CHAIN_ID = 1;
@@ -32,14 +33,14 @@ contract HelperConfig is CodeConstants, Script {
                                 TYPES
     //////////////////////////////////////////////////////////////*/
     struct NetworkConfig {
-        uint256 subscriptionId;// VRF服务订阅的唯一标识符（用于跟踪和管理随机数请求的付款）
-        bytes32 gasLane;// 定义随机数生成的gas价格上限（不同的gasLane对应不同的确认时间和成本）
-        uint256 automationUpdateInterval;// 定义两次抽奖之间的最小时间间隔（防止抽奖过于频繁，确保公平性）
-        uint256 raffleEntranceFee;// 参与抽奖需要支付的费用（用于奖池accumulation）
-        uint32 callbackGasLimit;// VRF回调函数的gas限制（确保随机数生成回调能够成功执行）
-        address vrfCoordinatorV2_5;// VRF协调器合约地址（负责处理随机数请求和响应）
-        address link;// LINK代币合约地址（用于支付Chainlink VRF服务费用）
-        address account;// 部署者账户地址（用于管理合约部署和交互）
+        uint256 subscriptionId; // VRF服务订阅的唯一标识符（用于跟踪和管理随机数请求的付款）
+        bytes32 gasLane; // 定义随机数生成的gas价格上限（不同的gasLane对应不同的确认时间和成本）
+        uint256 automationUpdateInterval; // 定义两次抽奖之间的最小时间间隔（防止抽奖过于频繁，确保公平性）
+        uint256 raffleEntranceFee; // 参与抽奖需要支付的费用（用于奖池accumulation）
+        uint32 callbackGasLimit; // VRF回调函数的gas限制（确保随机数生成回调能够成功执行）
+        address vrfCoordinatorV2_5; // VRF协调器合约地址（负责处理随机数请求和响应）
+        address link; // LINK代币合约地址（用于支付Chainlink VRF服务费用）
+        address account; // 部署者账户地址（用于管理合约部署和交互）
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -62,12 +63,17 @@ contract HelperConfig is CodeConstants, Script {
         return getConfigByChainId(block.chainid);
     }
 
-    function setConfig(uint256 chainId, NetworkConfig memory networkConfig) public {
+    function setConfig(
+        uint256 chainId,
+        NetworkConfig memory networkConfig
+    ) public {
         networkConfigs[chainId] = networkConfig;
     }
 
     // 利用链ID获取相应配置
-    function getConfigByChainId(uint256 chainId) public returns (NetworkConfig memory) {
+    function getConfigByChainId(
+        uint256 chainId
+    ) public returns (NetworkConfig memory) {
         if (networkConfigs[chainId].vrfCoordinatorV2_5 != address(0)) {
             return networkConfigs[chainId];
         } else if (chainId == LOCAL_CHAIN_ID) {
@@ -77,7 +83,11 @@ contract HelperConfig is CodeConstants, Script {
         }
     }
 
-    function getMainnetEthConfig() public pure returns (NetworkConfig memory mainnetNetworkConfig) {
+    function getMainnetEthConfig()
+        public
+        pure
+        returns (NetworkConfig memory mainnetNetworkConfig)
+    {
         mainnetNetworkConfig = NetworkConfig({
             subscriptionId: 0, // If left as 0, our scripts will create one!
             gasLane: 0x9fe0eebf5e446e3c998ec9bb19951541aee00bb90ea201ae456421a2ded86805,
@@ -90,7 +100,11 @@ contract HelperConfig is CodeConstants, Script {
         });
     }
 
-    function getSepoliaEthConfig() public pure returns (NetworkConfig memory sepoliaNetworkConfig) {
+    function getSepoliaEthConfig()
+        public
+        pure
+        returns (NetworkConfig memory sepoliaNetworkConfig)
+    {
         sepoliaNetworkConfig = NetworkConfig({
             // Chainlink VRF 订阅ID，唯一标识一个 VRF 服务订阅，管理随机数请求和费用结算。作用：请求随机数时需要提供，费用从该订阅扣除。
             subscriptionId: 35953992749011469347670286683980262947405339699573753149657221682241756426716,
@@ -119,8 +133,11 @@ contract HelperConfig is CodeConstants, Script {
 
         //部署一个模拟的链上VRF协调器合约
         vm.startBroadcast();
-        VRFCoordinatorV2_5Mock vrfCoordinatorV2_5Mock =
-            new VRFCoordinatorV2_5Mock(MOCK_BASE_FEE, MOCK_GAS_PRICE_LINK, MOCK_WEI_PER_UINT_LINK);
+        VRFCoordinatorV2_5Mock vrfCoordinatorV2_5Mock = new VRFCoordinatorV2_5Mock(
+                MOCK_BASE_FEE,
+                MOCK_GAS_PRICE_LINK,
+                MOCK_WEI_PER_UINT_LINK
+            );
         // 部署一个模拟的LINK代币合约
         LinkToken link = new LinkToken();
         // 创建订阅并返回订阅ID

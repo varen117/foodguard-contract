@@ -19,8 +19,12 @@ contract CreateSubscription is Script {
         // 获取当前链的配置
         HelperConfig helperConfig = new HelperConfig();
         // 获取VRF协调器地址和账户地址
-        address vrfCoordinatorV2_5 = helperConfig.getConfigByChainId(block.chainid).vrfCoordinatorV2_5;
-        address account = helperConfig.getConfigByChainId(block.chainid).account;
+        address vrfCoordinatorV2_5 = helperConfig
+            .getConfigByChainId(block.chainid)
+            .vrfCoordinatorV2_5;
+        address account = helperConfig
+            .getConfigByChainId(block.chainid)
+            .account;
         return createSubscription(vrfCoordinatorV2_5, account);
     }
 
@@ -31,7 +35,10 @@ contract CreateSubscription is Script {
      * @return subId 订阅ID
      * @return vrfCoordinatorV2_5 VRF协调器地址
      */
-    function createSubscription(address vrfCoordinatorV2_5, address account) public returns (uint256, address) {
+    function createSubscription(
+        address vrfCoordinatorV2_5,
+        address account
+    ) public returns (uint256, address) {
         console.log("Creating subscription on chainId: ", block.chainid);
         /*
             vm.startBroadcast(account);
@@ -43,7 +50,8 @@ contract CreateSubscription is Script {
             部署一致性：在多环境部署时，确保所有操作都由同一个账户完成，便于管理和追踪。
          */
         vm.startBroadcast(account);
-        uint256 subId = VRFCoordinatorV2_5Mock(vrfCoordinatorV2_5).createSubscription();
+        uint256 subId = VRFCoordinatorV2_5Mock(vrfCoordinatorV2_5)
+            .createSubscription();
         vm.stopBroadcast();
         console.log("Your subscription Id is: ", subId);
         console.log("Please update the subscriptionId in HelperConfig.s.sol");
@@ -69,7 +77,9 @@ contract FundSubscription is CodeConstants, Script {
         // 从配置中获取必要的参数
         HelperConfig helperConfig = new HelperConfig();
         uint256 subId = helperConfig.getConfig().subscriptionId; // 订阅ID
-        address vrfCoordinatorV2_5 = helperConfig.getConfig().vrfCoordinatorV2_5; // VRF协调器地址
+        address vrfCoordinatorV2_5 = helperConfig
+            .getConfig()
+            .vrfCoordinatorV2_5; // VRF协调器地址
         address link = helperConfig.getConfig().link; // linkToken代币地址
         address account = helperConfig.getConfig().account; // 部署者账户地址
         //如果没有订阅ID，则创建一个新的订阅
@@ -78,34 +88,53 @@ contract FundSubscription is CodeConstants, Script {
             (uint256 updatedSubId, address updatedVRFv2) = createSub.run();
             subId = updatedSubId;
             vrfCoordinatorV2_5 = updatedVRFv2;
-            console.log("New SubId Created! ", subId, "VRF Address: ", vrfCoordinatorV2_5);
+            console.log(
+                "New SubId Created! ",
+                subId,
+                "VRF Address: ",
+                vrfCoordinatorV2_5
+            );
         }
 
         fundSubscription(vrfCoordinatorV2_5, subId, link, account);
     }
     /**
-     * 
+     *
      * @notice 第二步：为订阅充值 LINK 代币
      * @param vrfCoordinatorV2_5 VRF协调器地址
      * @param subId 订阅ID
      * @param link LINK代币地址
      * @param account 部署者账户地址
      */
-    function fundSubscription(address vrfCoordinatorV2_5, uint256 subId, address link, address account) public {
+    function fundSubscription(
+        address vrfCoordinatorV2_5,
+        uint256 subId,
+        address link,
+        address account
+    ) public {
         console.log("Funding subscription: ", subId);
         console.log("Using vrfCoordinator: ", vrfCoordinatorV2_5);
         console.log("On ChainID: ", block.chainid);
-        if (block.chainid == LOCAL_CHAIN_ID) {// 如果是本地链
+        if (block.chainid == LOCAL_CHAIN_ID) {
+            // 如果是本地链
             vm.startBroadcast(account);
-            VRFCoordinatorV2_5Mock(vrfCoordinatorV2_5).fundSubscription(subId, FUND_AMOUNT);
+            VRFCoordinatorV2_5Mock(vrfCoordinatorV2_5).fundSubscription(
+                subId,
+                FUND_AMOUNT
+            );
             vm.stopBroadcast();
-        } else { // 实际网络逻辑
+        } else {
+            // 实际网络逻辑
             console.log(LinkToken(link).balanceOf(msg.sender));
             console.log(msg.sender);
             console.log(LinkToken(link).balanceOf(address(this)));
             console.log(address(this));
             vm.startBroadcast(account);
-            LinkToken(link).transferAndCall(vrfCoordinatorV2_5, FUND_AMOUNT, abi.encode(subId));
+            LinkToken(link).transferAndCall(
+                vrfCoordinatorV2_5,
+                FUND_AMOUNT,
+                abi.encode(subId)
+            );
             vm.stopBroadcast();
         }
     }
@@ -121,12 +150,20 @@ contract FundSubscription is CodeConstants, Script {
  * @notice 消费者就是使用VRF服务的合约的地址
  */
 contract AddConsumer is Script {
-    function addConsumer(address contractToAddToVrf, address vrfCoordinator, uint256 subId, address account) public {
+    function addConsumer(
+        address contractToAddToVrf,
+        address vrfCoordinator,
+        uint256 subId,
+        address account
+    ) public {
         console.log("Adding consumer contract: ", contractToAddToVrf);
         console.log("Using vrfCoordinator: ", vrfCoordinator);
         console.log("On ChainID: ", block.chainid);
         vm.startBroadcast(account);
-        VRFCoordinatorV2_5Mock(vrfCoordinator).addConsumer(subId, contractToAddToVrf);
+        VRFCoordinatorV2_5Mock(vrfCoordinator).addConsumer(
+            subId,
+            contractToAddToVrf
+        );
         vm.stopBroadcast();
     }
 
@@ -137,7 +174,9 @@ contract AddConsumer is Script {
     function addConsumerUsingConfig(address mostRecentlyDeployed) public {
         HelperConfig helperConfig = new HelperConfig();
         uint256 subId = helperConfig.getConfig().subscriptionId;
-        address vrfCoordinatorV2_5 = helperConfig.getConfig().vrfCoordinatorV2_5;
+        address vrfCoordinatorV2_5 = helperConfig
+            .getConfig()
+            .vrfCoordinatorV2_5;
         address account = helperConfig.getConfig().account;
 
         addConsumer(mostRecentlyDeployed, vrfCoordinatorV2_5, subId, account);
@@ -148,7 +187,10 @@ contract AddConsumer is Script {
      */
     function run() external {
         // 获取当前链的最近刚部署的合约地址（参考文档：github.com/Cyfrin/foundry-devops）
-        address mostRecentlyDeployed = DevOpsTools.get_most_recent_deployment("FoodSafetyGovernance", block.chainid);
+        address mostRecentlyDeployed = DevOpsTools.get_most_recent_deployment(
+            "FoodSafetyGovernance",
+            block.chainid
+        );
         addConsumerUsingConfig(mostRecentlyDeployed);
     }
 }
