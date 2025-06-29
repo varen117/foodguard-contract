@@ -107,7 +107,7 @@ contract HelperConfig is CodeConstants, Script {
             // LINK 代币合约地址。作用：支付 Chainlink VRF 服务费用。（测试link领取：https://docs.chain.link/resources/link-token-contracts）
             link: 0x779877A7B0D9E8603169DdbD7836e478b4624789,
             // 部署或操作合约的账户地址（你的钱包地址）。作用：用于合约部署、订阅创建、充值等链上操作。
-            account: 0xC871425db776da225212A8295250cc7f02Fe6D03
+            account: 0x9a911944F09b15c91C613b1563C3b4d788Ac1bd4
         });
     }
 
