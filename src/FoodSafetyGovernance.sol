@@ -776,7 +776,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         address[] memory enterprisePunishments = votingDisputeManager.getPunishMembers(caseId, DataStructures.UserRole.ENTERPRISE);
         address[] memory daoPunishments = votingDisputeManager.getPunishMembers(caseId, DataStructures.UserRole.DAO_MEMBER);
 
-        // 步骤5：调用奖惩管理器进行综合计算
+        // 步骤5：调用奖惩管理器进行奖惩分配
         rewardManager.processCaseRewardPunishment(
             caseId,
             complainantRewards.length > 0 ? complainantRewards[0] : address(0),
