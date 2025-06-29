@@ -656,10 +656,11 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
     // ==================== 管理函数 ====================
 
     /**
-     * @notice 设置治理合约地址
+     * @notice 设置治理合约地址并授予治理权限
+     * @dev 使用统一的治理设置方法，保证一致性
      */
-    function setGovernanceContract(address _governanceContract) external onlyOwner notZeroAddress(_governanceContract) { // 治理合约地址
-        governanceContract = _governanceContract;
+    function setGovernanceContract(address _governanceContract) external onlyOwner {
+        _setGovernanceRole(_governanceContract, "VotingDisputeManager");
     }
 
     /**

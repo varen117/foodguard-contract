@@ -25,7 +25,7 @@ interface IFundManager {
 
     function getSystemConfig() external view returns (DataStructures.SystemConfig memory);
 
-    function _addToFundPool(uint256 amount, string memory source) internal;
+    function addToFundPool(uint256 amount, string memory source) external;
 }
 
 /**

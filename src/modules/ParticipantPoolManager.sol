@@ -383,11 +383,11 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
     // ==================== 管理函数 ====================
 
     /**
-     * @notice 设置治理合约地址
+     * @notice 设置治理合约地址并授予治理权限
+     * @dev 使用统一的治理设置方法，保证一致性
      */
     function setGovernanceContract(address _governanceContract) external onlyOwner {
-        require(_governanceContract != address(0), "Invalid governance contract");
-        governanceContract = _governanceContract;
+        _setGovernanceRole(_governanceContract, "ParticipantPoolManager");
     }
 
     /**

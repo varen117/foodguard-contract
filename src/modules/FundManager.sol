@@ -24,11 +24,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     // ==================== 角色定义 ====================
     // 统一使用治理合约权限系统，与其他模块保持一致
 
-    /// @notice 治理角色 - 拥有系统配置权限和重要决策权
-    bytes32 public constant GOVERNANCE_ROLE = keccak256("GOVERNANCE_ROLE");
-
-    // ==================== 状态变量 ====================
-
     /// @notice 系统资金池 - 管理系统中的各类资金
     /// @dev 包括总余额、奖励池、运营资金等不同用途的资金分类
     DataStructures.FundPool public fundPool;
@@ -114,7 +109,6 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     constructor(address admin) {
         // 授予角色权限
         _grantRole(DEFAULT_ADMIN_ROLE, admin); // 默认管理员角色，可以管理其他角色
-        _grantRole(GOVERNANCE_ROLE, admin); // 治理角色，可以修改系统配置
 
         // 初始化系统配置 - 这些参数控制整个治理系统的运行
         systemConfig = DataStructures.SystemConfig({
@@ -155,24 +149,11 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
     // ==================== 治理合约设置 ====================
 
     /**
-     * @notice 设置治理合约地址
-     * @dev 只有管理员可以设置，设置后治理合约获得治理权限
-     * @param _governanceContract 治理合约地址
+     * @notice 设置治理合约地址并授予治理权限
+     * @dev 使用统一的治理设置方法，保证一致性
      */
-    function setGovernanceContract(address _governanceContract) external onlyRole(DEFAULT_ADMIN_ROLE) notZeroAddress(_governanceContract) {
-        _setGovernanceContract(_governanceContract);
-
-        // 授予治理合约治理权限
-        _grantRole(GOVERNANCE_ROLE, _governanceContract);
-
-        emit Events.BusinessProcessAnomaly(
-            0,
-            _governanceContract,
-            "Governance Setup",
-            "Governance contract address updated",
-            "New governance contract granted GOVERNANCE_ROLE",
-            block.timestamp
-        );
+    function setGovernanceContract(address _governanceContract) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setGovernanceRole(_governanceContract, "FundManager");
     }
 
     // ==================== 动态保证金核心函数 ====================
@@ -720,6 +701,16 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         DataStructures.DynamicDepositConfig calldata newConfig
     ) external {
         dynamicConfig = newConfig;
+    }
+
+    /**
+     * @notice 向资金池添加资金
+     * @dev 只有治理角色可以调用，用于将惩罚金等资金转入系统资金池
+     * @param amount 添加的金额
+     * @param source 资金来源描述
+     */
+    function addToFundPool(uint256 amount, string memory source) external onlyGovernance {
+        _addToFundPool(amount, source);
     }
 
     /**

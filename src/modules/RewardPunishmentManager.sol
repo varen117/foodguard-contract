@@ -20,12 +20,8 @@ import "@openzeppelin/contracts/access/Ownable.sol"; // 导入所有权控制
  * 4. 声誉系统：维护长期声誉分数，实现声誉激励
  * 5. 公平机制：确保正确参与者获得奖励，错误参与者承担相应惩罚
  */
-contract RewardPunishmentManager is Ownable {
+contract RewardPunishmentManager is Ownable, CommonModifiers {
     // ==================== 状态变量 ====================
-
-    /// @notice 治理合约地址 - 唯一有权调用奖惩处理函数的合约
-    /// @dev 确保奖惩处理只能由经过验证的治理流程触发
-    address public governanceContract;
 
     /// @notice 资金管理合约地址 - 处理奖励发放和惩罚扣除的合约
     /// @dev 与资金管理模块协作，实现奖惩的实际执行
@@ -111,16 +107,6 @@ contract RewardPunishmentManager is Ownable {
     }
 
     // ==================== 修饰符 ====================
-
-    /**
-     * @notice 只有治理合约可以调用
-     */
-    modifier onlyGovernance() {
-        if (msg.sender != governanceContract) {
-            revert Errors.InsufficientPermission(msg.sender, "GOVERNANCE");
-        }
-        _;
-    }
 
     /**
      * @notice 检查案件是否未处理
@@ -497,7 +483,7 @@ contract RewardPunishmentManager is Ownable {
             uint256 toFundPool = (record.totalPunishmentAmount * 20) / 100;
 
             // 这里应该调用fundManager将资金转入基金库
-             fundManagerContract._addToFundPool(toFundPool, "Punishment penalty");
+            fundManagerContract.addToFundPool(toFundPool, "Punishment penalty");
         }
     }
 
@@ -555,10 +541,11 @@ contract RewardPunishmentManager is Ownable {
      */
     function _executeRolePunishments(
         address[] memory targets,
-        RewardPunishmentRecord storage record
+        RewardPunishmentRecord storage record,
+        IFundManager fundManagerContract
     ) internal {
         for (uint256 i = 0; i < targets.length; i++) {
-            _executeSinglePunishment(targets[i], record);
+            _executeSinglePunishment(targets[i], record, fundManagerContract);
         }
     }
 
@@ -686,18 +673,6 @@ contract RewardPunishmentManager is Ownable {
     // ==================== 管理函数 ====================
 
     /**
-     * @notice 设置治理合约地址
-     */
-    function setGovernanceContract(
-        address _governanceContract
-    ) external onlyOwner {
-        if (_governanceContract == address(0)) {
-            revert Errors.ZeroAddress();
-        }
-        governanceContract = _governanceContract;
-    }
-
-    /**
      * @notice 设置资金管理合约地址
      */
     function setFundManager(address _fundManager) external onlyOwner {
@@ -707,5 +682,11 @@ contract RewardPunishmentManager is Ownable {
         fundManager = _fundManager;
     }
 
-
+    /**
+     * @notice 设置治理合约地址并授予治理权限
+     * @dev 使用统一的治理设置方法，保证一致性
+     */
+    function setGovernanceContract(address _governanceContract) external onlyOwner {
+        _setGovernanceRole(_governanceContract, "RewardPunishmentManager");
+    }
 }
