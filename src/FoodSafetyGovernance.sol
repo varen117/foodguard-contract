@@ -744,7 +744,7 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     }
 
     /**
-     * @notice 执行特定案件的动作（外部调用以便try-catch）
+     * @notice 执行特定案件的动作
      * @param caseId 案件ID
      * @param actionType 动作类型 (0: endVoting, 1: endChallenge, 2: updateToVotingEnded)
      */

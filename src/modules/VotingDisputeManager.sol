@@ -26,7 +26,7 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
     /// @notice 投票会话映射 caseId => VotingSession
     mapping(uint256 => DataStructures.VotingSession) public votingSessions;
 
-    /// @notice 质疑会话映射 caseId => DisputeSession  
+    /// @notice 质疑会话映射 caseId => DisputeSession
     mapping(uint256 => DisputeSession) public disputeSessions;
 
     /// @notice 用户投票历史 user => caseId => hasVoted
@@ -633,9 +633,14 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
      */
     function areAllValidatorsVoted(uint256 caseId) external view returns (bool) {
         DataStructures.VotingSession storage session = votingSessions[caseId];
-        if (session.caseId == 0 || !session.isActive) return false;
+        if (session.caseId == 0) return false;
 
-        return session.totalVotes >= session.selectedValidators.length;
+        // 检查是否已达到全员投票完成的条件
+        bool allVotesCollected = session.totalVotes >= session.selectedValidators.length;
+
+        // 如果投票会话已完成且收集了所有投票，则返回true
+        // 如果投票会话仍活跃且收集了所有投票，也返回true（支持实时检测）
+        return allVotesCollected && (session.isCompleted || session.isActive);
     }
 
     /**
