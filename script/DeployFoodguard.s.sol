@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Script} from "forge-std/Script.sol";
+import {Script, console} from "forge-std/Script.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 import {FundManager} from "../src/modules/FundManager.sol";
 import {ParticipantPoolManager} from "../src/modules/ParticipantPoolManager.sol";
@@ -17,6 +17,7 @@ import {AddConsumer, CreateSubscription, FundSubscription} from "./Interactions.
  * @dev 部署所有模块合约和主合约，并完成初始化配置
  */
 contract DeployFoodguard is Script {
+    address public admin = 0x9a911944F09b15c91C613b1563C3b4d788Ac1bd4;
     // 部署后的合约实例
     struct DeployedContracts {
         FoodSafetyGovernance governance;
@@ -26,40 +27,38 @@ contract DeployFoodguard is Script {
         VotingDisputeManager votingManager;
     }
 
-    function run() external returns (DeployedContracts memory, HelperConfig) {
+    function run() external returns (DeployedContracts memory) {
         // 获取当前链的配置
         HelperConfig helperConfig = new HelperConfig();
         HelperConfig.NetworkConfig memory config = helperConfig.getConfig();
 
-        // 1. 处理Chainlink VRF订阅（如果需要）
-        if (config.subscriptionId == 0) {
-            CreateSubscription createSubscription = new CreateSubscription();
-            (
-                config.subscriptionId,
-                config.vrfCoordinatorV2_5
-            ) = createSubscription.createSubscription(
-                config.vrfCoordinatorV2_5,
-                config.account
-            );
+        // 1. 处理Chainlink VRF订阅
+        //        if (config.subscriptionId == 0) {
+        //            CreateSubscription createSubscription = new CreateSubscription();
+        //            (
+        //                config.subscriptionId,
+        //                config.vrfCoordinatorV2_5
+        //            ) = createSubscription.createSubscription(
+        //                config.vrfCoordinatorV2_5,
+        //                config.account
+        //            );
+        //
+        //            // 订阅充值
+        //            FundSubscription fundSubscription = new FundSubscription();
+        //            fundSubscription.fundSubscription(
+        //                config.vrfCoordinatorV2_5,
+        //                config.subscriptionId,
+        //                config.link,
+        //                config.account
+        //            );
+        //
+        //            helperConfig.setConfig(block.chainid, config);
+        //        }
 
-            // 订阅充值
-            FundSubscription fundSubscription = new FundSubscription();
-            fundSubscription.fundSubscription(
-                config.vrfCoordinatorV2_5,
-                config.subscriptionId,
-                config.link,
-                config.account
-            );
-
-            helperConfig.setConfig(block.chainid, config);
-        }
-
-        vm.startBroadcast(config.account);
+        vm.startBroadcast(admin);
 
         // 2. 部署所有模块合约
-        DeployedContracts memory contracts = _deployAllContracts(
-            config.account
-        );
+        DeployedContracts memory contracts = _deployAllContracts(admin);
 
         // 3. 初始化主合约的模块地址
         contracts.governance.initializeContracts(
@@ -91,7 +90,7 @@ contract DeployFoodguard is Script {
         contracts.votingManager.setGovernanceContract(
             address(contracts.governance)
         );
-
+        console.log(address(contracts.fundManager));
         // 6. 设置模块间的依赖关系
         contracts.votingManager.setFundManager(address(contracts.fundManager));
         contracts.votingManager.setPoolManager(address(contracts.poolManager));
@@ -103,15 +102,16 @@ contract DeployFoodguard is Script {
         vm.stopBroadcast();
 
         // 8. 添加消费者到VRF订阅
-        AddConsumer addConsumer = new AddConsumer();
-        addConsumer.addConsumer(
-            address(contracts.governance),
-            config.vrfCoordinatorV2_5,
-            config.subscriptionId,
-            config.account
-        );
+        //        AddConsumer addConsumer = new AddConsumer();
+        //        addConsumer.addConsumer(
+        //            address(contracts.governance),
+        //            config.vrfCoordinatorV2_5,
+        //            config.subscriptionId,
+        //            config.account
+        //        );
 
-        return (contracts, helperConfig);
+        //        return (contracts, helperConfig);
+        return (contracts);
     }
 
     /**
@@ -129,7 +129,10 @@ contract DeployFoodguard is Script {
         contracts.votingManager = new VotingDisputeManager(admin);
 
         // 部署主合约
-        contracts.governance = new FoodSafetyGovernance(admin);
+        contracts.governance = new FoodSafetyGovernance(
+            admin,
+            0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B
+        );
 
         return contracts;
     }

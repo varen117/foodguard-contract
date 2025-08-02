@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20; // 使用 Solidity 0.8.20 版本，支持最新的安全特性
 
-import "@openzeppelin/contracts/access/AccessControl.sol"; // 导入访问控制，实现角色管理
+import "@openzeppelin/contracts/access/IAccessControl.sol"; // 导入访问控制，实现角色管理
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol"; // 导入重入攻击防护
 import "@openzeppelin/contracts/utils/Pausable.sol"; // 导入暂停功能，用于紧急情况
 import "../libraries/DataStructures.sol"; // 导入数据结构库
@@ -91,12 +91,12 @@ contract FundManager is AccessControl, ReentrancyGuard, Pausable, CommonModifier
         // 初始化系统配置 - 这些参数控制整个治理系统的运行
         systemConfig = DataStructures.SystemConfig({
             minComplaintDeposit: 0.01 ether,
-            minEnterpriseDeposit: 0.1 ether,
-            minDaoDeposit: 0.05 ether,
+            minEnterpriseDeposit: 0.01 ether,
+            minDaoDeposit: 0.01 ether,
 //            votingPeriod: 259200,//三天 todo 方便测试，暂时注释
-            votingPeriod: 200,//单位秒（两分钟）
+            votingPeriod: 600,//单位秒（两分钟）
 //            challengePeriod: 172800,todo 方便测试，暂时注释
-            challengePeriod: 200,
+            challengePeriod: 600,
             minValidators: 3,
             maxValidators: 15,
             rewardPoolPercentage: 30,

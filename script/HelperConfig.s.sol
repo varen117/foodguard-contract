@@ -107,7 +107,7 @@ contract HelperConfig is CodeConstants, Script {
     {
         sepoliaNetworkConfig = NetworkConfig({
             // Chainlink VRF 订阅ID，唯一标识一个 VRF 服务订阅，管理随机数请求和费用结算。作用：请求随机数时需要提供，费用从该订阅扣除。
-            subscriptionId: 35953992749011469347670286683980262947405339699573753149657221682241756426716,
+            subscriptionId: 5702034581519125911627049198231086394334436498960967910974897128905696731392,
             // 说明：Chainlink VRF 的 keyHash，代表最大可接受的 gas 价格。作用：影响 VRF 节点响应速度和费用。
             gasLane: 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae,
             // 说明：自动化任务（如抽奖开奖）之间的最小时间间隔，单位为秒。防止过于频繁地开奖，保证公平性和可控性。
@@ -115,7 +115,7 @@ contract HelperConfig is CodeConstants, Script {
             // 说明：参与抽奖需要支付的 ETH 数量（单位：wei）。作用：累积到奖池，最终由获胜者领取。
             raffleEntranceFee: 0.01 ether,
             // 说明：Chainlink VRF 回调函数（如 fulfillRandomWords）的最大 gas 限制。作用：确保回调逻辑能顺利完成，避免因 gas 不足导致失败。
-            callbackGasLimit: 500000,
+            callbackGasLimit: 150000,
             // 说明：Chainlink VRF Coordinator 合约地址。作用：负责接收随机数请求、分发随机数、管理订阅等。
             vrfCoordinatorV2_5: 0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B,
             // LINK 代币合约地址。作用：支付 Chainlink VRF 服务费用。（测试link领取：https://docs.chain.link/resources/link-token-contracts）
@@ -149,7 +149,7 @@ contract HelperConfig is CodeConstants, Script {
             gasLane: 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c, // doesn't really matter
             automationUpdateInterval: 20, // 30 seconds
             raffleEntranceFee: 0.01 ether,
-            callbackGasLimit: 500000, // 500,000 gas
+            callbackGasLimit: 1500000, // 500,000 gas
             vrfCoordinatorV2_5: address(vrfCoordinatorV2_5Mock),
             link: address(link),
             account: FOUNDRY_DEFAULT_SENDER

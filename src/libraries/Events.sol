@@ -43,7 +43,7 @@ library Events {
         uint256 totalPunishmentAmount,
         uint256 timestamp
     );
-
+    event RandomWordsRequested(uint256 indexed caseId, uint256 requestId, uint32 callbackGasLimit);
     // ==================== 投票管理事件 ====================
 
     event ValidatorsSelected(
@@ -52,7 +52,6 @@ library Events {
         uint256 startTime,
         uint256 endTime,
         uint256 timestamp
-
     );
 
     event VoteSessionStart(
@@ -61,7 +60,6 @@ library Events {
         uint256 startTime,
         uint256 endTime,
         uint256 timestamp
-
     );
 
     event VoteStart(
@@ -70,7 +68,6 @@ library Events {
         uint256 startTime,
         uint256 endTime,
         uint256 timestamp
-
     );
 
     event VoteSubmitted(
@@ -189,7 +186,7 @@ library Events {
         uint256 totalDeposit,
         uint256 timestamp
     );
-event RewardDistribution(
+    event RewardDistribution(
         address indexed user,
         uint256 amount,
         uint256 totalDeposit,
@@ -236,10 +233,7 @@ event RewardDistribution(
         uint256 timestamp
     );
 
-    event SystemConfigUpdated(
-        string configType,
-        string description
-    );
+    event SystemConfigUpdated(string configType, string description);
 
     // ==================== 自动执行事件 ====================
 

@@ -51,7 +51,7 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
     RewardPunishmentConfig public rewardConfig;
 
     // ==================== 结构体定义 ====================
-
+    IFundManager private fundManagerContract;
     /**
      * @notice 奖惩记录结构体 - 记录单个案件的完整奖惩信息
      * @dev 这是奖惩系统的核心数据结构，包含案件的所有奖惩细节
@@ -222,17 +222,14 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
         record.processTime = block.timestamp;
         record.isProcessed = false;
 
-        // 获取系统配置和用户接口
-        IFundManager fundManagerContract = IFundManager(fundManager);
-
         // 计算总奖励金额和总惩罚金额
-        _calculateTotalAmounts(record, fundManagerContract);
+        _calculateTotalAmounts(record);
 
         // 分配奖励和惩罚
-        _allocateRewardsAndPunishments(record, fundManagerContract);
+        _allocateRewardsAndPunishments(record);
 
         // 发放奖励到获胜者保证金、扣除罚金从失败者保证金
-        _distributeRewardsToDeposits(record, fundManagerContract);
+        _distributeRewardsToDeposits(record);
 
         emit Events.RewardPunishmentCalculationStarted(
             caseId,
@@ -249,11 +246,10 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
      * @notice 计算总奖励金额和总惩罚金额
      */
     function _calculateTotalAmounts(
-        RewardPunishmentRecord storage record,
-        IFundManager fundManagerContract
+        RewardPunishmentRecord storage record
     ) internal {
         // 获取系统配置
-        DataStructures.SystemConfig memory config = fundManagerContract.getSystemConfig();
+//        DataStructures.SystemConfig memory config = fundManagerContract.getSystemConfig();
 
         // 根据风险等级确定惩罚比例
         uint256 punishmentRate = getPunishmentRate(record.riskLevel);
@@ -273,7 +269,7 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
                 uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.enterprisePunishmentTargets);
                 totalPunishments += (userDeposit * punishmentRate) / 10000;
             }
-            } else {
+        } else {
             // 投诉不成立：投诉者受惩罚
             if (record.complainantPunishmentTarget != address(0)) {
                 uint256 userDeposit = fundManagerContract.getCaseFrozenDeposit(record.caseId, record.complainantPunishmentTarget);
@@ -300,8 +296,7 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
      * @notice 分配奖励和惩罚
      */
     function _allocateRewardsAndPunishments(
-        RewardPunishmentRecord storage record,
-        IFundManager fundManagerContract
+        RewardPunishmentRecord storage record
     ) internal {
         // 获取系统配置
         DataStructures.SystemConfig memory config = fundManagerContract.getSystemConfig();
@@ -313,13 +308,13 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
 
         // 计算总权重
         uint256 totalRewardRecipients = (record.complainantRewardRecipient != address(0) ? 1 : 0) +
-                                       (record.enterpriseRewardRecipients != address(0) ? 1 : 0) +
-                                       record.daoRewardRecipients.length;
+            (record.enterpriseRewardRecipients != address(0) ? 1 : 0) +
+                            record.daoRewardRecipients.length;
 
         if (totalRewardRecipients > 0) {
             uint256 totalWeight = (record.complainantRewardRecipient != address(0) ? complainantWeight : 0) +
-                                 (record.enterpriseRewardRecipients != address(0) ? enterpriseWeight : 0) +
-                                 record.daoRewardRecipients.length * daoWeight;
+                (record.enterpriseRewardRecipients != address(0) ? enterpriseWeight : 0) +
+                record.daoRewardRecipients.length * daoWeight;
 
             // 分配投诉者奖励（如果有）
             if (record.complainantRewardRecipient != address(0)) {
@@ -458,8 +453,7 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
      * @notice 发放奖励到用户保证金余额
      */
     function _distributeRewardsToDeposits(
-        RewardPunishmentRecord storage record,
-        IFundManager fundManagerContract
+        RewardPunishmentRecord storage record
     ) internal {
         // 发放投诉者奖励（如果有）
         if (record.complainantRewardRecipient != address(0)) {
@@ -718,6 +712,7 @@ contract RewardPunishmentManager is Ownable, CommonModifiers {
     function setFundManager(address _fundManager) external onlyOwner {
         require(_fundManager != address(0), "Invalid fund manager address");
         fundManager = _fundManager;
+        fundManagerContract = IFundManager(_fundManager);
         emit Events.SystemConfigUpdated("FundManager", "Fund manager address updated");
     }
 

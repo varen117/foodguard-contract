@@ -42,8 +42,11 @@ import {AutomationCompatibleInterface} from "@chainlink/contracts/src/v0.8/autom
  * 步骤4：结束投票并开始质疑 → 步骤5：结束质疑并进入奖惩 →
  * 步骤6：处理奖惩 → 步骤7：完成案件
  */
-contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationCompatibleInterface {
-
+contract FoodSafetyGovernance is
+    Pausable,
+    VRFConsumerBaseV2Plus,
+    AutomationCompatibleInterface
+{
     address private _admin;
 
     modifier onlyAdmin() {
@@ -63,8 +66,9 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     // vrf,也可以用构造函数初始化它们
     uint256 private s_subscriptionId;
     address private vrfCoordinator;
-    bytes32 private s_keyHash = 0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
-    uint32 private callbackGasLimit = 40000;
+    bytes32 private s_keyHash =
+        0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae;
+    uint32 public callbackGasLimit = 800000;
     uint16 private requestConfirmations = 3;
 
     /// @notice VRF配置是否已初始化
@@ -129,7 +133,8 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     /**
      * @notice 检查案件是否存在
      */
-    modifier caseExists(uint256 caseId) { // 案件ID
+    modifier caseExists(uint256 caseId) {
+        // 案件ID
         if (cases[caseId].caseId == 0) {
             revert Errors.CaseNotFound(caseId);
         }
@@ -155,14 +160,18 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
 
     // ==================== 构造函数 ====================
 
-    constructor(address initialOwner) VRFConsumerBaseV2Plus(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266) { // 初始所有者地址
+    constructor(
+        address initialOwner,
+        address _vrfCoordinator
+    ) VRFConsumerBaseV2Plus(_vrfCoordinator) {
+        // 初始所有者地址
         if (initialOwner == address(0)) {
             revert Errors.ZeroAddress();
         }
         _admin = initialOwner;
         caseCounter = 0;
         // 对于本地测试，使用第一个Anvil测试账户作为模拟VRF协调器
-        vrfCoordinator = 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266;
+        vrfCoordinator = _vrfCoordinator;
     }
 
     // ==================== 初始化函数 ====================
@@ -211,7 +220,10 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         uint16 _requestConfirmations
     ) external onlyAdmin {
         require(_subscriptionId > 0, "Invalid subscription ID");
-        require(_vrfCoordinator != address(0), "Invalid VRF coordinator address");
+        require(
+            _vrfCoordinator != address(0),
+            "Invalid VRF coordinator address"
+        );
         require(_keyHash != bytes32(0), "Invalid key hash");
         require(_callbackGasLimit >= 20000, "Gas limit too low");
         require(_requestConfirmations >= 1, "Invalid confirmation count");
@@ -226,14 +238,16 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         emit Events.SystemConfigUpdated("VRF", "VRF configuration updated");
     }
 
-
-
     /**
      * @notice 验证系统配置完整性
      * @return isValid 配置是否有效
      * @return issues 配置问题列表
      */
-    function validateConfiguration() external view returns (bool isValid, string[] memory issues) {
+    function validateConfiguration()
+        external
+        view
+        returns (bool isValid, string[] memory issues)
+    {
         string[] memory problems = new string[](10);
         uint256 count = 0;
 
@@ -241,11 +255,11 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         if (s_subscriptionId == 0) {
             problems[count++] = "VRF subscription ID not set";
         }
-        
+
         if (vrfCoordinator == address(0)) {
             problems[count++] = "VRF coordinator not set";
         }
-        
+
         if (!vrfConfigured) {
             problems[count++] = "VRF not configured";
         }
@@ -254,15 +268,15 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         if (address(fundManager) == address(0)) {
             problems[count++] = "Fund manager not set";
         }
-        
+
         if (address(votingDisputeManager) == address(0)) {
             problems[count++] = "Voting dispute manager not set";
         }
-        
+
         if (address(rewardManager) == address(0)) {
             problems[count++] = "Reward manager not set";
         }
-        
+
         if (address(poolManager) == address(0)) {
             problems[count++] = "Pool manager not set";
         }
@@ -286,7 +300,11 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     function registerUser(address user, uint8 userRole) external {
         // 检查是否超出枚举范围
         if (userRole > uint8(DataStructures.UserRole.DAO_MEMBER)) {
-            revert Errors.UserRoleIncorrect(user, userRole, "Incorrect user role registration");
+            revert Errors.UserRoleIncorrect(
+                user,
+                userRole,
+                "Incorrect user role registration"
+            );
         }
 
         // 调用池管理合约注册用户
@@ -329,9 +347,11 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         string calldata evidenceHash, // 证据材料哈希
         uint8 riskLevel // 风险等级数值(0-2)
     )
-    external
-    whenNotPaused
-    returns (uint256 caseId) // 返回新案件ID
+        external
+        whenNotPaused
+        returns (
+            uint256 caseId // 返回新案件ID
+        )
     {
         // 验证输入参数
         if (enterprise == address(0)) {
@@ -347,8 +367,17 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         }
 
         // 验证投诉者角色权限
-        (bool complainantRegistered, DataStructures.UserRole complainantRole, bool complainantActive,) = poolManager.getUserInfo(msg.sender); // 投诉者注册状态, 用户角色, 激活状态, 其他信息
-        if (!complainantRegistered || !complainantActive || complainantRole != DataStructures.UserRole.COMPLAINANT) {
+        (
+            bool complainantRegistered,
+            DataStructures.UserRole complainantRole,
+            bool complainantActive,
+
+        ) = poolManager.getUserInfo(msg.sender); // 投诉者注册状态, 用户角色, 激活状态, 其他信息
+        if (
+            !complainantRegistered ||
+            !complainantActive ||
+            complainantRole != DataStructures.UserRole.COMPLAINANT
+        ) {
             revert Errors.InvalidUserRole(
                 msg.sender,
                 uint8(complainantRole),
@@ -357,8 +386,17 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         }
 
         // 验证企业角色权限
-        (bool enterpriseRegistered, DataStructures.UserRole enterpriseRole, bool enterpriseActive,) = poolManager.getUserInfo(enterprise); // 企业注册状态, 用户角色, 激活状态, 其他信息
-        if (!enterpriseRegistered || !enterpriseActive || enterpriseRole != DataStructures.UserRole.ENTERPRISE) {
+        (
+            bool enterpriseRegistered,
+            DataStructures.UserRole enterpriseRole,
+            bool enterpriseActive,
+
+        ) = poolManager.getUserInfo(enterprise); // 企业注册状态, 用户角色, 激活状态, 其他信息
+        if (
+            !enterpriseRegistered ||
+            !enterpriseActive ||
+            enterpriseRole != DataStructures.UserRole.ENTERPRISE
+        ) {
             revert Errors.InvalidUserRole(
                 enterprise,
                 uint8(enterpriseRole),
@@ -385,11 +423,20 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
             revert Errors.InvalidRiskLevel(riskLevel);
         }
 
-        DataStructures.RiskLevel riskLevelEnum = DataStructures.RiskLevel(riskLevel); // 风险等级枚举值
+        DataStructures.RiskLevel riskLevelEnum = DataStructures.RiskLevel(
+            riskLevel
+        ); // 风险等级枚举值
 
         // 检查用户是否可以参与新案件（基于动态保证金系统）
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
-        if (!fundManager.canParticipateInCase(msg.sender, riskLevelEnum, config.minComplaintDeposit)) {
+        DataStructures.SystemConfig memory config = fundManager
+            .getSystemConfig(); // 系统配置参数
+        if (
+            !fundManager.canParticipateInCase(
+                msg.sender,
+                riskLevelEnum,
+                config.minComplaintDeposit
+            )
+        ) {
             revert Errors.InsufficientDynamicDeposit(
                 msg.sender,
                 config.minComplaintDeposit,
@@ -398,7 +445,13 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         }
 
         // 检查企业是否可以参与新案件
-        if (!fundManager.canParticipateInCase(enterprise, riskLevelEnum, config.minEnterpriseDeposit)) {
+        if (
+            !fundManager.canParticipateInCase(
+                enterprise,
+                riskLevelEnum,
+                config.minEnterpriseDeposit
+            )
+        ) {
             revert Errors.InsufficientDynamicDeposit(
                 enterprise,
                 config.minEnterpriseDeposit,
@@ -462,9 +515,11 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
      *
      * @param caseId 案件ID
      */
-    function _lockDeposits(uint256 caseId) internal { // 案件ID
+    function _lockDeposits(uint256 caseId) internal {
+        // 案件ID
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
+        DataStructures.SystemConfig memory config = fundManager
+            .getSystemConfig(); // 系统配置参数
 
         // 步骤1：冻结投诉者保证金
         // 冻结考虑用户的风险等级、声誉分数、并发案件等因素
@@ -476,7 +531,10 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         );
 
         // 记录实际冻结的投诉者保证金
-        caseInfo.complainantDeposit = fundManager.getCaseFrozenDeposit(caseId, caseInfo.complainant);
+        caseInfo.complainantDeposit = fundManager.getCaseFrozenDeposit(
+            caseId,
+            caseInfo.complainant
+        );
 
         // 步骤2：冻结企业保证金
         // 企业通常需要更高的保证金，体现更大的责任
@@ -488,7 +546,10 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         );
 
         // 记录实际冻结的企业保证金
-        caseInfo.enterpriseDeposit = fundManager.getCaseFrozenDeposit(caseId, caseInfo.enterprise);
+        caseInfo.enterpriseDeposit = fundManager.getCaseFrozenDeposit(
+            caseId,
+            caseInfo.enterprise
+        );
 
         // 步骤3：更新案件状态为保证金已锁定
         caseInfo.status = DataStructures.CaseStatus.DEPOSIT_LOCKED;
@@ -523,12 +584,20 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
      *
      * @param caseId 案件ID
      */
-    function _startVoting(uint256 caseId) internal { // 案件ID
+    function _startVoting(uint256 caseId) internal {
+        // 案件ID
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
+        DataStructures.SystemConfig memory config = fundManager
+            .getSystemConfig(); // 系统配置参数
 
         // 验证投诉者角色权限
-        if (!poolManager.canParticipateInCase(caseId, caseInfo.complainant, DataStructures.UserRole.COMPLAINANT)) {
+        if (
+            !poolManager.canParticipateInCase(
+                caseId,
+                caseInfo.complainant,
+                DataStructures.UserRole.COMPLAINANT
+            )
+        ) {
             revert Errors.InvalidUserRole(
                 caseInfo.complainant,
                 uint8(DataStructures.UserRole.COMPLAINANT),
@@ -537,7 +606,13 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         }
 
         // 验证企业角色权限
-        if (!poolManager.canParticipateInCase(caseId, caseInfo.enterprise, DataStructures.UserRole.ENTERPRISE)) {
+        if (
+            !poolManager.canParticipateInCase(
+                caseId,
+                caseInfo.enterprise,
+                DataStructures.UserRole.ENTERPRISE
+            )
+        ) {
             revert Errors.InvalidUserRole(
                 caseInfo.enterprise,
                 uint8(DataStructures.UserRole.ENTERPRISE),
@@ -547,11 +622,11 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
 
         // 确定验证者数量（基于风险等级动态调整）
         uint256 validatorCount = config.minValidators; // 验证者数量
-//        if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
-//            validatorCount = config.maxValidators > 7 ? 7 : config.maxValidators; // 高风险案件更多验证者
-//        } else if (caseInfo.riskLevel == DataStructures.RiskLevel.MEDIUM) {
-//            validatorCount = config.minValidators + 2; // 中风险案件适中验证者
-//        }
+        //        if (caseInfo.riskLevel == DataStructures.RiskLevel.HIGH) {
+        //            validatorCount = config.maxValidators > 7 ? 7 : config.maxValidators; // 高风险案件更多验证者
+        //        } else if (caseInfo.riskLevel == DataStructures.RiskLevel.MEDIUM) {
+        //            validatorCount = config.minValidators + 2; // 中风险案件适中验证者
+        //        }
         validatorCount = 3; // // todo 便于测试统一设置成3，后续delete
         // 确保验证者数量为奇数
         if (validatorCount % 2 == 0) {
@@ -559,36 +634,47 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         }
 
         uint256 requestId = this.sendRandomWordsRequest(uint32(validatorCount)); // 发送请求获取随机数
+        emit Events.RandomWordsRequested(caseId, requestId, callbackGasLimit);
         caseRequestIds[requestId] = caseId; // 将请求ID与案件ID关联
     }
 
     // VRF获取随机数
-    function sendRandomWordsRequest(uint32 _numWords) external returns (uint256) {
+    function sendRandomWordsRequest(
+        uint32 _numWords
+    ) external returns (uint256) {
         // 检查VRF配置是否已初始化
         require(vrfConfigured, "VRF not configured");
         require(s_subscriptionId > 0, "Invalid subscription ID");
-        
+        emit Events.RandomWordsRequested(0, 0, callbackGasLimit);
         // 获取随机数（组装请求参数）
-        VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient.RandomWordsRequest({
-            keyHash: s_keyHash,//chainlink中VRF创建的订阅 keyhash
-            subId: s_subscriptionId, // VRF订阅ID
-            requestConfirmations: requestConfirmations, // 请求确认数
-            callbackGasLimit: callbackGasLimit, // 回调gas限制
-            numWords: _numWords, //获取的随机数个数
-            extraArgs: VRFV2PlusClient._argsToBytes(
-                VRFV2PlusClient.ExtraArgsV1({nativePayment: false}) // 将nativePayment设置为true，使用Sepolia ETH而不是LINK来支付VRF请求
-            )
-        });
+        VRFV2PlusClient.RandomWordsRequest memory request = VRFV2PlusClient
+            .RandomWordsRequest({
+                keyHash: s_keyHash, //chainlink中VRF创建的订阅 keyhash
+                subId: s_subscriptionId, // VRF订阅ID
+                requestConfirmations: requestConfirmations, // 请求确认数
+                callbackGasLimit: callbackGasLimit, // 回调gas限制
+                numWords: _numWords, //获取的随机数个数
+                extraArgs: VRFV2PlusClient._argsToBytes(
+                    VRFV2PlusClient.ExtraArgsV1({nativePayment: false}) // 将nativePayment设置为true，使用Sepolia ETH而不是LINK来支付VRF请求
+                )
+            });
         // 向 Chainlink VRF 协调器请求随机数，返回一个唯一的 requestId 用于追踪这次随机数请求
         return s_vrfCoordinator.requestRandomWords(request);
     }
 
     // 选择随机验证者并开启投票
-    function fulfillRandomWords(uint256 requestId, uint256[] calldata randomWords) internal override {
+    function fulfillRandomWords(
+        uint256 requestId,
+        uint256[] calldata randomWords
+    ) internal override {
         uint256 caseId = caseRequestIds[requestId]; // 获取与请求ID关联的案件ID
         // 使用ParticipantPoolManager随机选择验证者
-        address[] memory selectedValidators = poolManager.selectValidators(caseId, randomWords); // 选中的验证者地址数组
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
+        address[] memory selectedValidators = poolManager.selectValidators(
+            caseId,
+            randomWords
+        ); // 选中的验证者地址数组
+        DataStructures.SystemConfig memory config = fundManager
+            .getSystemConfig(); // 系统配置参数
         // 将选中的验证者传递给VotingDisputeManager开启投票
         votingDisputeManager.startVotingSessionWithValidators(
             caseId,
@@ -599,24 +685,17 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         // 更新案件状态
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
         caseInfo.status = DataStructures.CaseStatus.VOTING;
-
-        emit Events.CaseStatusUpdated(
-            caseId,
-            DataStructures.CaseStatus.DEPOSIT_LOCKED,
-            DataStructures.CaseStatus.VOTING,
-            block.timestamp
-        );
-
-        // 发出验证者选择事件
-        emit Events.VoteStart(caseId, selectedValidators, block.timestamp, block.timestamp + config.votingPeriod, block.timestamp);
+        
     }
 
     // ==================== 结束投票并开启质疑阶段 ====================
-    function checkUpkeep(bytes memory /* checkData */)
-    public
-    view
-    override
-    returns (bool upkeepNeeded, bytes memory performData)
+    function checkUpkeep(
+        bytes memory /* checkData */
+    )
+        public
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
     {
         // 只检查活跃案件列表，避免遍历所有历史案件，显著提升性能
         uint256 activeCaseCount = activeCases.length;
@@ -634,23 +713,31 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
                 // 投票期结束时自动更新为投票结束状态
                 if (votingDisputeManager.isVotingPeriodEnded(caseId)) {
                     casesToProcess[count] = caseId;
-                    actionTypes[count] = uint256(DataStructures.ActionType.updateToVotingStatus); // updateToVotingStatus
+                    actionTypes[count] = uint256(
+                        DataStructures.ActionType.updateToVotingStatus
+                    ); // updateToVotingStatus
                     count++;
                     upkeepNeeded = true;
                 }
                 // 条件2：全员提前完成投票时自动更新为投票结束状态
                 else if (votingDisputeManager.areAllValidatorsVoted(caseId)) {
                     casesToProcess[count] = caseId;
-                    actionTypes[count] = uint256(DataStructures.ActionType.updateToVotingStatus); // updateToVotingStatus
+                    actionTypes[count] = uint256(
+                        DataStructures.ActionType.updateToVotingStatus
+                    ); // updateToVotingStatus
                     count++;
                     upkeepNeeded = true;
                 }
             }
             // 检查投票结束阶段
-            else if (caseInfo.status == DataStructures.CaseStatus.VOTING_ENDED) {
+            else if (
+                caseInfo.status == DataStructures.CaseStatus.VOTING_ENDED
+            ) {
                 // 投票结束后自动进入质疑阶段
                 casesToProcess[count] = caseId;
-                actionTypes[count] = uint256(DataStructures.ActionType.endVoting); // endVoting
+                actionTypes[count] = uint256(
+                    DataStructures.ActionType.endVoting
+                ); // endVoting
                 count++;
                 upkeepNeeded = true;
             }
@@ -659,7 +746,9 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
                 // 条件3：质疑期结束时自动调用endChallengeAndProcessRewards
                 if (votingDisputeManager.isChallengePeriodEnded(caseId)) {
                     casesToProcess[count] = caseId;
-                    actionTypes[count] = uint256(DataStructures.ActionType.endChallenge); // endChallenge
+                    actionTypes[count] = uint256(
+                        DataStructures.ActionType.endChallenge
+                    ); // endChallenge
                     count++;
                     upkeepNeeded = true;
                 }
@@ -687,16 +776,25 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
      */
     function performUpkeep(bytes calldata performData) external override {
         // 解码performData
-        (uint256[] memory casesToProcess, uint256[] memory actionTypes) = abi.decode(performData, (uint256[], uint256[]));
+        (uint256[] memory casesToProcess, uint256[] memory actionTypes) = abi
+            .decode(performData, (uint256[], uint256[]));
 
-        require(casesToProcess.length == actionTypes.length, "Data length mismatch");
+        require(
+            casesToProcess.length == actionTypes.length,
+            "Data length mismatch"
+        );
 
         uint256 successfulCases = 0;
         uint256 failedCases = 0;
 
         // 循环处理所有需要的案件
         for (uint256 i = 0; i < casesToProcess.length; i++) {
-            if (_executeActionWithErrorHandling(casesToProcess[i], actionTypes[i])) {
+            if (
+                _executeActionWithErrorHandling(
+                    casesToProcess[i],
+                    actionTypes[i]
+                )
+            ) {
                 successfulCases++;
             } else {
                 failedCases++;
@@ -720,13 +818,20 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
      * @param actionType 动作类型
      * @return success 执行是否成功
      */
-    function _executeActionWithErrorHandling(uint256 caseId, uint256 actionType) internal returns (bool success) {
+    function _executeActionWithErrorHandling(
+        uint256 caseId,
+        uint256 actionType
+    ) internal returns (bool success) {
         try this.executeCaseAction(caseId, actionType) {
             // 成功执行，发送成功事件
             emit Events.AutoExecutionSuccess(
                 caseId,
                 actionType,
-                actionType == 0 ? "endVoting" : actionType == 1 ? "endChallenge" : "updateToVotingEnded",
+                actionType == 0
+                    ? "endVoting"
+                    : actionType == 1
+                        ? "endChallenge"
+                        : "updateToVotingEnded",
                 block.timestamp
             );
             return true;
@@ -735,7 +840,11 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
             emit Events.AutoExecutionFailed(
                 caseId,
                 actionType,
-                actionType == 0 ? "endVoting" : actionType == 1 ? "endChallenge" : "updateToVotingEnded",
+                actionType == 0
+                    ? "endVoting"
+                    : actionType == 1
+                        ? "endChallenge"
+                        : "updateToVotingEnded",
                 "Execution failed",
                 block.timestamp
             );
@@ -750,14 +859,18 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
      */
     function executeCaseAction(uint256 caseId, uint256 actionType) external {
         require(msg.sender == address(this), "Only self can call");
-        DataStructures.ActionType actionTypeEnum = DataStructures.ActionType(actionType); // 将动作类型转换为枚举
-        if (DataStructures.ActionType.endVoting ==  actionTypeEnum) {
+        DataStructures.ActionType actionTypeEnum = DataStructures.ActionType(
+            actionType
+        ); // 将动作类型转换为枚举
+        if (DataStructures.ActionType.endVoting == actionTypeEnum) {
             // 结束投票并开始质疑期
             this.endVotingAndStartChallenge(caseId);
         } else if (actionTypeEnum == DataStructures.ActionType.endChallenge) {
             // 结束质疑期并进入奖惩阶段
             this.endChallengeAndProcessRewards(caseId);
-        } else if (actionTypeEnum == DataStructures.ActionType.updateToVotingStatus) {
+        } else if (
+            actionTypeEnum == DataStructures.ActionType.updateToVotingStatus
+        ) {
             // 更新案件状态为投票结束
             this.updateCaseToVotingEnded(caseId);
         }
@@ -770,10 +883,10 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     function updateCaseToVotingEnded(
         uint256 caseId // 案件ID
     )
-    external
-    whenNotPaused
-    caseExists(caseId)
-    inStatus(caseId, DataStructures.CaseStatus.VOTING)
+        external
+        whenNotPaused
+        caseExists(caseId)
+        inStatus(caseId, DataStructures.CaseStatus.VOTING)
     {
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
@@ -796,10 +909,10 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     function endVotingAndStartChallenge(
         uint256 caseId // 案件ID
     )
-    external
-    whenNotPaused
-    caseExists(caseId)
-    inStatus(caseId, DataStructures.CaseStatus.VOTING_ENDED)
+        external
+        whenNotPaused
+        caseExists(caseId)
+        inStatus(caseId, DataStructures.CaseStatus.VOTING_ENDED)
     {
         // 结束验证阶段并获取投票结果
         votingDisputeManager.endVotingSession(caseId);
@@ -810,8 +923,12 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
         caseInfo.status = DataStructures.CaseStatus.CHALLENGING;
 
         // 开始质疑期
-        DataStructures.SystemConfig memory config = fundManager.getSystemConfig(); // 系统配置参数
-        votingDisputeManager.startDisputeSession(caseId, config.challengePeriod);
+        DataStructures.SystemConfig memory config = fundManager
+            .getSystemConfig(); // 系统配置参数
+        votingDisputeManager.startDisputeSession(
+            caseId,
+            config.challengePeriod
+        );
 
         emit Events.CaseStatusUpdated(
             caseId,
@@ -828,19 +945,19 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     function endChallengeAndProcessRewards(
         uint256 caseId // 案件ID
     )
-    external
-    whenNotPaused
-    caseExists(caseId)
-    inStatus(caseId, DataStructures.CaseStatus.CHALLENGING)
+        external
+        whenNotPaused
+        caseExists(caseId)
+        inStatus(caseId, DataStructures.CaseStatus.CHALLENGING)
     {
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
         // 结束质疑期并获取质疑者详细信息
         bool finalResult = votingDisputeManager.endDisputeSession( // 最终投诉结果
-            caseId,
-            caseInfo.complainant,
-            caseInfo.enterprise
-        );
+                caseId,
+                caseInfo.complainant,
+                caseInfo.enterprise
+            );
 
         // 更新最终结果
         caseInfo.complaintUpheld = finalResult;
@@ -868,17 +985,28 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
      *
      * @param caseId 案件ID
      */
-    function _processRewardsPunishments(uint256 caseId) internal { // 案件ID
+    function _processRewardsPunishments(uint256 caseId) internal {
+        // 案件ID
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
         // 获取各角色的奖励和惩罚成员列表
-        address[] memory complainantRewards = votingDisputeManager.getRewardMembers(caseId, DataStructures.UserRole.COMPLAINANT);
-        address[] memory enterpriseRewards = votingDisputeManager.getRewardMembers(caseId, DataStructures.UserRole.ENTERPRISE);
-        address[] memory daoRewards = votingDisputeManager.getRewardMembers(caseId, DataStructures.UserRole.DAO_MEMBER);
+        address[] memory complainantRewards = votingDisputeManager
+            .getRewardMembers(caseId, DataStructures.UserRole.COMPLAINANT);
+        address[] memory enterpriseRewards = votingDisputeManager
+            .getRewardMembers(caseId, DataStructures.UserRole.ENTERPRISE);
+        address[] memory daoRewards = votingDisputeManager.getRewardMembers(
+            caseId,
+            DataStructures.UserRole.DAO_MEMBER
+        );
 
-        address[] memory complainantPunishments = votingDisputeManager.getPunishMembers(caseId, DataStructures.UserRole.COMPLAINANT);
-        address[] memory enterprisePunishments = votingDisputeManager.getPunishMembers(caseId, DataStructures.UserRole.ENTERPRISE);
-        address[] memory daoPunishments = votingDisputeManager.getPunishMembers(caseId, DataStructures.UserRole.DAO_MEMBER);
+        address[] memory complainantPunishments = votingDisputeManager
+            .getPunishMembers(caseId, DataStructures.UserRole.COMPLAINANT);
+        address[] memory enterprisePunishments = votingDisputeManager
+            .getPunishMembers(caseId, DataStructures.UserRole.ENTERPRISE);
+        address[] memory daoPunishments = votingDisputeManager.getPunishMembers(
+            caseId,
+            DataStructures.UserRole.DAO_MEMBER
+        );
 
         // 步骤5：调用奖惩管理器进行奖惩分配
         rewardManager.processCaseRewardPunishment(
@@ -886,11 +1014,16 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
             complainantRewards.length > 0 ? complainantRewards[0] : address(0),
             enterpriseRewards.length > 0 ? enterpriseRewards[0] : address(0),
             daoRewards,
-            complainantPunishments.length > 0 ? complainantPunishments[0] : address(0),
-            enterprisePunishments.length > 0 ? enterprisePunishments[0] : address(0),
+            complainantPunishments.length > 0
+                ? complainantPunishments[0]
+                : address(0),
+            enterprisePunishments.length > 0
+                ? enterprisePunishments[0]
+                : address(0),
             daoPunishments,
             caseInfo.complaintUpheld,
-            caseInfo.riskLevel);
+            caseInfo.riskLevel
+        );
 
         // 步骤6：完成案件处理
         _completeCase(caseId);
@@ -900,7 +1033,8 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
      * @notice 步骤7: 完成案件
      * @param caseId 案件ID
      */
-    function _completeCase(uint256 caseId) internal { // 案件ID
+    function _completeCase(uint256 caseId) internal {
+        // 案件ID
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
 
         caseInfo.status = DataStructures.CaseStatus.COMPLETED;
@@ -1033,7 +1167,11 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
      * @dev 批量获取所有活跃案件的详细信息，用于管理面板展示
      * @return activeCaseInfos 活跃案件信息数组
      */
-    function getActiveCaseInfos() external view returns (CaseInfo[] memory activeCaseInfos) {
+    function getActiveCaseInfos()
+        external
+        view
+        returns (CaseInfo[] memory activeCaseInfos)
+    {
         uint256 count = activeCases.length;
         activeCaseInfos = new CaseInfo[](count);
 
@@ -1049,13 +1187,13 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
     /**
      * @notice 暂停/恢复合约
      */
-    function setPaused(bool _paused) external onlyAdmin { // 是否暂停标志
+    function setPaused(bool _paused) external onlyAdmin {
+        // 是否暂停标志
         if (_paused) {
             _pause();
         } else {
             _unpause();
         }
-
     }
 
     /**
@@ -1097,10 +1235,11 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
             CaseInfo storage caseInfo = cases[caseId];
 
             // 检查案件是否已完成或已取消
-            if (caseInfo.isCompleted ||
+            if (
+                caseInfo.isCompleted ||
                 caseInfo.status == DataStructures.CaseStatus.COMPLETED ||
-                caseInfo.status == DataStructures.CaseStatus.CANCELLED) {
-
+                caseInfo.status == DataStructures.CaseStatus.CANCELLED
+            ) {
                 // 移除已完成的案件（这会改变数组，所以不增加i）
                 _removeFromActiveCases(caseId);
             } else {
@@ -1108,5 +1247,9 @@ contract FoodSafetyGovernance is Pausable, VRFConsumerBaseV2Plus, AutomationComp
                 i++;
             }
         }
+    }
+
+    function setVrfGasLimit(uint32 count) external {
+        callbackGasLimit = count; // 设置VRF回调gas限制
     }
 }

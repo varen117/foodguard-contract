@@ -131,11 +131,6 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
             revert Errors.InsufficientValidators(0, 1);
         }
 
-        // 验证所有验证者地址
-        for (uint256 i = 0; i < selectedValidators.length; i++) { // 循环索引
-            _requireNotZeroAddress(selectedValidators[i]);
-        }
-
         // 创建并初始化投票会话
         DataStructures.VotingSession storage session = votingSessions[caseId]; // 投票会话存储引用
         session.caseId = caseId;

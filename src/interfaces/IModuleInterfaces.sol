@@ -41,13 +41,3 @@ interface IParticipantPoolManager {
 
     function isValidatorsCheckedVoting(uint256 caseId) external view returns (bool);
 }
-
-/**
- * @notice 投票质疑管理合约接口
- * @dev 定义合约需要调用的投票质疑管理函数
- */
-interface IVotingDisputeManager {
-    function isVotingPeriodEnded(uint256 caseId) external view returns (bool);
-    function isChallengePeriodEnded(uint256 caseId) external view returns (bool);
-    function areAllValidatorsVoted(uint256 caseId) external view returns (bool);
-}
