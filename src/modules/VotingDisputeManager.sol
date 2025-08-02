@@ -120,10 +120,12 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
      */
     function startVotingSessionWithValidators(
         uint256 caseId, // 案件ID
-        address[] calldata selectedValidators, // 选定的验证者地址数组
+        address[] memory selectedValidators, // 选定的验证者地址数组
         uint256 votingDuration // 投票持续时间(秒)
     ) external onlyGovernance returns (address[] memory) {
-        if (votingSessions[caseId].caseId != 0) {
+        // 创建并初始化投票会话
+        DataStructures.VotingSession storage session = votingSessions[caseId]; // 投票会话存储引用
+        if (session.caseId != 0) {
             revert Errors.DuplicateOperation(address(0), "voting session");
         }
 
@@ -131,8 +133,6 @@ contract VotingDisputeManager is Ownable, CommonModifiers {
             revert Errors.InsufficientValidators(0, 1);
         }
 
-        // 创建并初始化投票会话
-        DataStructures.VotingSession storage session = votingSessions[caseId]; // 投票会话存储引用
         session.caseId = caseId;
         session.selectedValidators = selectedValidators;
         session.startTime = block.timestamp;

@@ -491,7 +491,7 @@ contract FoodSafetyGovernance is
         );
 
         // 立即进入下一步骤：锁定保证金
-        _lockDeposits(caseId);
+        _lockDeposits(caseId, config);
 
         return caseId;
     }
@@ -515,11 +515,9 @@ contract FoodSafetyGovernance is
      *
      * @param caseId 案件ID
      */
-    function _lockDeposits(uint256 caseId) internal {
+    function _lockDeposits(uint256 caseId, DataStructures.SystemConfig memory config) internal {
         // 案件ID
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
-        DataStructures.SystemConfig memory config = fundManager
-            .getSystemConfig(); // 系统配置参数
 
         // 步骤1：冻结投诉者保证金
         // 冻结考虑用户的风险等级、声誉分数、并发案件等因素
@@ -564,7 +562,7 @@ contract FoodSafetyGovernance is
 
         // 步骤5：自动启动投票流程
         // 保证金锁定成功后立即进入投票阶段，提高处理效率
-        _startVoting(caseId);
+        _startVoting(caseId, config);
     }
 
     /**
@@ -584,11 +582,9 @@ contract FoodSafetyGovernance is
      *
      * @param caseId 案件ID
      */
-    function _startVoting(uint256 caseId) internal {
+    function _startVoting(uint256 caseId, DataStructures.SystemConfig memory config) internal {
         // 案件ID
         CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
-        DataStructures.SystemConfig memory config = fundManager
-            .getSystemConfig(); // 系统配置参数
 
         // 验证投诉者角色权限
         if (
@@ -672,7 +668,8 @@ contract FoodSafetyGovernance is
         address[] memory selectedValidators = poolManager.selectValidators(
             caseId,
             randomWords
-        ); // 选中的验证者地址数组
+        );
+        // 选中的验证者地址数组
         DataStructures.SystemConfig memory config = fundManager
             .getSystemConfig(); // 系统配置参数
         // 将选中的验证者传递给VotingDisputeManager开启投票
@@ -683,9 +680,7 @@ contract FoodSafetyGovernance is
         );
 
         // 更新案件状态
-        CaseInfo storage caseInfo = cases[caseId]; // 案件信息存储引用
-        caseInfo.status = DataStructures.CaseStatus.VOTING;
-        
+        cases[caseId].status = DataStructures.CaseStatus.VOTING;
     }
 
     // ==================== 结束投票并开启质疑阶段 ====================

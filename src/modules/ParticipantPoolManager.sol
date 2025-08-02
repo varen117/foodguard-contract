@@ -199,11 +199,8 @@ contract ParticipantPoolManager is Ownable, CommonModifiers {
             DataStructures.UserRole.DAO_MEMBER,
             randomWords
         );
-        if (availableValidators.length < validatorConfig.minValidators) {
-            revert Errors.InsufficientAvailableParticipants(caseId);
-        }
         // 发送验证者已选定事件
-        emit ValidatorsSelected(caseId, availableValidators);
+//        emit ValidatorsSelected(caseId, availableValidators);
         return validators;
     }
 
